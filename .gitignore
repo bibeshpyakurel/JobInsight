@@ -1,0 +1,2 @@
+# Prevent accidental API key exposure
+background/service-worker.js

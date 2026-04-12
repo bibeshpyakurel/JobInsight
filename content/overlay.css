@@ -1,0 +1,397 @@
+/* JobInsight Floating Overlay */
+
+#jobinsight-overlay {
+  position: fixed;
+  top: 72px;
+  right: 18px;
+  width: 330px;
+  z-index: 99999;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  /* overflow:visible lets the -3px edge handles extend outside without being clipped */
+  overflow: visible;
+  user-select: none;
+  background: transparent;
+}
+
+/* Inner wrapper clips visual content to rounded corners without hiding edge handles */
+.ji-inner {
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+  width: 100%;
+  height: 100%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────────── */
+
+.ji-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
+  color: #fff;
+}
+
+.ji-logo {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+
+/* ── Position Banner ─────────────────────────────────────────────────────────── */
+
+.ji-position-banner {
+  background: #f0f5ff;
+  border-bottom: 1px solid #d0e0f7;
+  padding: 8px 14px;
+}
+
+.ji-position-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0a66c2;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.ji-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ji-status {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ji-status--loading { color: #ffd166; }
+.ji-status--done    { color: #06d6a0; }
+.ji-status--error   { color: #ff6b6b; }
+.ji-status--warn    { color: #ffd166; }
+
+.ji-btn-minimize {
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0 2px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.ji-btn-minimize:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+/* ── Body ────────────────────────────────────────────────────────────────────── */
+
+.ji-body {
+  max-height: 72vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #ddd transparent;
+}
+
+.ji-body::-webkit-scrollbar { width: 4px; }
+.ji-body::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+
+/* ── Loading State ───────────────────────────────────────────────────────────── */
+
+.ji-loading-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ji-loading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ji-loading-label {
+  font-size: 11px;
+  color: #aaa;
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.ji-loading-bar {
+  flex: 1;
+  height: 8px;
+  background: #f0f2f5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ji-pulse {
+  display: block;
+  height: 100%;
+  width: 55%;
+  background: linear-gradient(90deg, #e8ecf0, #c8d8f0, #e8ecf0);
+  background-size: 220% 100%;
+  border-radius: 4px;
+  animation: ji-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes ji-shimmer {
+  0%   { background-position: 220% 0; }
+  100% { background-position: -220% 0; }
+}
+
+/* ── Sections ────────────────────────────────────────────────────────────────── */
+
+.ji-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ji-section {
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.ji-section:first-child { padding-top: 0; }
+.ji-section:last-child  { border-bottom: none; padding-bottom: 0; }
+
+.ji-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #a0a8b4;
+  margin-bottom: 5px;
+}
+
+.ji-value {
+  font-size: 12px;
+  color: #2d3748;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* ── Grid layout for top fields ──────────────────────────────────────────────── */
+
+.ji-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.ji-field { display: flex; flex-direction: column; gap: 2px; }
+
+.ji-field--full {
+  grid-column: 1 / -1;
+}
+
+/* ── Badges ─────────────────────────────────────────────────────────────────── */
+
+.ji-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ji-badge--green { background: #d4f5e9; color: #0a7d4b; }
+.ji-badge--red   { background: #fee2e2; color: #b91c1c; }
+
+.ji-value--small { font-size: 11px; }
+
+/* ── H1B Section Header ──────────────────────────────────────────────────────── */
+
+.ji-h1b-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.ji-h1b-company {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2d3748;
+  margin-top: 2px;
+}
+
+.ji-h1b-checking {
+  font-size: 11px;
+  color: #a0a8b4;
+  font-style: italic;
+}
+
+/* ── H1B Accordion ───────────────────────────────────────────────────────────── */
+
+.ji-summary-trigger {
+  margin-top: 0;
+}
+
+.ji-accordion-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #f7f9fb;
+  border: 1px solid #e8ecf2;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #0a66c2;
+  font-weight: 500;
+  margin-top: 4px;
+  transition: background 0.15s;
+}
+
+.ji-accordion-trigger:hover { background: #eaf1fb; }
+
+.ji-chevron {
+  font-size: 9px;
+  color: #a0a8b4;
+  flex-shrink: 0;
+}
+
+.ji-accordion-body {
+  display: none;
+  margin-top: 8px;
+}
+
+.ji-h1b-msg {
+  font-size: 12px;
+  color: #a0a8b4;
+  text-align: center;
+  padding: 10px 0;
+  font-style: italic;
+}
+
+.ji-h1b-total {
+  font-size: 11px;
+  color: #718096;
+  margin-bottom: 6px;
+}
+
+.ji-h1b-table {
+  border: 1px solid #e8ecf2;
+  border-radius: 7px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.ji-h1b-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 10px;
+}
+
+.ji-h1b-row:nth-child(even) { background: #fafbfc; }
+
+.ji-h1b-head {
+  background: #f0f2f5 !important;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #a0a8b4;
+}
+
+/* ── Summary ─────────────────────────────────────────────────────────────────── */
+
+.ji-summary {
+  font-size: 12px;
+  color: #4a5568;
+  line-height: 1.55;
+}
+
+/* ── Keywords ────────────────────────────────────────────────────────────────── */
+
+.ji-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.ji-keyword {
+  background: #eff4ff;
+  color: #3b5bdb;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ── Highlight Button ────────────────────────────────────────────────────────── */
+
+.ji-section--highlight {
+  padding-top: 6px;
+  border-bottom: none;
+}
+
+.ji-btn-highlight {
+  width: 100%;
+  padding: 8px 12px;
+  background: #f0f5ff;
+  color: #0a66c2;
+  border: 1px solid #c8d8f7;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ji-btn-highlight:hover {
+  background: #dbeafe;
+}
+
+.ji-btn-highlight--active {
+  background: #fff3cd;
+  color: #92610a;
+  border-color: #f0c040;
+}
+
+.ji-btn-highlight--active:hover {
+  background: #fde99a;
+}
+
+/* ── Highlight spans injected into LinkedIn's job description ────────────────── */
+
+.ji-hl {
+  background: #bbf7d0 !important;
+  color: #14532d !important;
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 600;
+  box-shadow: 0 0 0 1px #86efac;
+}
+
+
+/* ── Messages (error / warning) ──────────────────────────────────────────────── */
+
+.ji-message {
+  font-size: 12px;
+  color: #718096;
+  text-align: center;
+  padding: 14px 4px;
+  line-height: 1.6;
+}
+
+.ji-message--error { color: #c53030; }
