@@ -20,16 +20,18 @@ A Chrome extension that automatically analyzes LinkedIn job postings and shows a
 ## Setup
 
 1. Click the **JobInsight** icon in the Chrome toolbar
-2. Enter your [OpenAI API key](https://platform.openai.com/api-keys)
-3. Click **Save**
-
-Your key is stored locally in Chrome and only sent to the OpenAI API.
+2. Sign in with your **Google account**
+3. You're ready — open any LinkedIn job listing
 
 ## Usage
 
 Open any LinkedIn job listing — the overlay appears automatically in the top-right corner. Drag it to reposition, or resize it from any edge.
 
 Results are cached for 7 days so re-opening the same job is instant.
+
+## Configuration
+
+This extension requires an OpenAI API key stored in `chrome.storage.local`. The key is never hardcoded in the source code.
 
 ## File structure
 
@@ -42,8 +44,8 @@ JobInsight/
 │   ├── linkedin-scraper.js     # Page scraping + overlay logic
 │   └── overlay.css             # Overlay styles
 └── popup/
-    ├── popup.html              # Settings UI
-    └── popup.js                # API key save/load
+    ├── popup.html              # Sign-in UI
+    └── popup.js                # Google OAuth & user management
 ```
 
 ## Cost

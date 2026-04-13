@@ -3,11 +3,16 @@
   "name": "JobInsight",
   "version": "1.0.0",
   "description": "AI-powered LinkedIn job analyzer: experience, H1B history, sponsorship, clearance, and more.",
-  "permissions": ["storage", "scripting"],
+  "permissions": ["storage", "scripting", "identity"],
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "https://api.openai.com/*"
+    "https://api.openai.com/*",
+    "https://www.googleapis.com/*"
   ],
+  "oauth2": {
+    "client_id": "YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com",
+    "scopes": ["profile", "email"]
+  },
   "background": {
     "service_worker": "background/service-worker.js"
   },

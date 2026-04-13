@@ -1,2 +1,13 @@
-# Prevent accidental API key exposure
-background/service-worker.js
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Secrets — create this file locally if needed
+.env
+secrets.json
