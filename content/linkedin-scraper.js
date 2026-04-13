@@ -136,8 +136,51 @@
     contentWatcher = { disconnect: () => clearInterval(poll) };
   }
 
+  function extractJobIdFromValue(value) {
+    if (!value) return null;
+    const match = String(value).match(/(\d{8,})/);
+    return match ? match[1] : null;
+  }
+
+  function getJobIdFromDom() {
+    const hrefSelectors = [
+      '.job-card-container--selected a[href*="/jobs/view/"]',
+      '.jobs-search-results-list__list-item--active a[href*="/jobs/view/"]',
+      '[aria-current="true"] a[href*="/jobs/view/"]',
+      'a[href*="/jobs/view/"][aria-current="true"]'
+    ];
+
+    for (const sel of hrefSelectors) {
+      const href = document.querySelector(sel)?.getAttribute('href');
+      const jobId = extractJobIdFromValue(href);
+      if (jobId) return jobId;
+    }
+
+    const dataSelectors = [
+      '.job-card-container--selected [data-job-id]',
+      '.jobs-search-results-list__list-item--active [data-job-id]',
+      '.job-card-container--selected [data-occludable-job-id]',
+      '.jobs-search-results-list__list-item--active [data-occludable-job-id]'
+    ];
+
+    for (const sel of dataSelectors) {
+      const el = document.querySelector(sel);
+      const jobId = extractJobIdFromValue(el?.getAttribute('data-job-id') || el?.getAttribute('data-occludable-job-id'));
+      if (jobId) return jobId;
+    }
+
+    return null;
+  }
+
   function isJobDetailPage() {
-    return /linkedin\.com\/jobs\/(view|search|collections)/.test(location.href);
+    if (!/linkedin\.com\/jobs\//.test(location.href)) return false;
+
+    return Boolean(
+      getJobId() ||
+      document.querySelector(
+        '.job-details-jobs-unified-top-card__job-title h1, .jobs-unified-top-card__job-title h1, .topcard__title, .jobs-search__job-details--container, .scaffold-layout__detail'
+      )
+    );
   }
 
   // ─── Job Data Extraction ────────────────────────────────────────────────────
@@ -256,9 +299,12 @@
     // /jobs/view/123456789/
     const pathMatch = location.href.match(/\/jobs\/view\/(\d+)/);
     if (pathMatch) return pathMatch[1];
-    // /jobs/search/?currentJobId=123456789  (search & collections pages)
-    const param = new URLSearchParams(location.search).get('currentJobId');
+    // currentJobId=123456789 (search, search-results, collections, recommended)
+    const params = new URLSearchParams(location.search);
+    const param = params.get('currentJobId') || params.get('jobId');
     if (param) return param;
+    const domId = getJobIdFromDom();
+    if (domId) return domId;
     return null;
   }
 
