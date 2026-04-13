@@ -573,64 +573,152 @@
     setTimeout(() => applyHighlights(data), 400);
   }
 
+  // Returns [{ term, cls }] — longest first so longer phrases shadow sub-phrases.
   function buildTerms(data) {
-    const terms = new Set();
+    const entries = [];
+    const seen    = new Set();
 
-    // Keywords — highest priority
-    (data.keywords || []).forEach(k => { if (k?.trim().length >= 2) terms.add(k.trim()); });
-
-    // Education — pull meaningful words from the category label
-    if (data.education) {
-      const eduMatches = data.education.match(
-        /\b(Bachelor|Master|MBA|PhD|Doctorate|GED|High School|degree|equivalent experience)\b/gi
-      );
-      (eduMatches || []).forEach(w => terms.add(w));
+    function add(term, cls) {
+      const t = (term || '').trim();
+      if (t.length < 2) return;
+      const key = t.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push({ term: t, cls });
     }
 
-    // Experience — add phrase only (not bare digits, which are too noisy)
+    // ── Keywords (green) ──────────────────────────────────────────────────────
+    (data.keywords || []).forEach(k => add(k, 'ji-hl ji-hl--keyword'));
+
+    // ── Experience (blue) ─────────────────────────────────────────────────────
     if (data.yearsOfExperience && data.yearsOfExperience !== 'Not specified') {
-      terms.add('years of experience');
-      terms.add('years experience');
+      const nums = (data.yearsOfExperience.match(/\d+/g) || []);
+      nums.forEach(n => {
+        add(`${n}+ years`,              'ji-hl ji-hl--exp');
+        add(`${n} years`,               'ji-hl ji-hl--exp');
+        add(`${n} or more years`,       'ji-hl ji-hl--exp');
+        add(`minimum ${n} years`,       'ji-hl ji-hl--exp');
+        add(`at least ${n} years`,      'ji-hl ji-hl--exp');
+        add(`${n}-`,                    'ji-hl ji-hl--exp'); // e.g. "3-5 years"
+      });
+      add('years of experience',          'ji-hl ji-hl--exp');
+      add('years of relevant experience', 'ji-hl ji-hl--exp');
+      add('years of related experience',  'ji-hl ji-hl--exp');
+      add('years experience',             'ji-hl ji-hl--exp');
+      add('years of work experience',     'ji-hl ji-hl--exp');
     }
 
-    // Sponsorship
+    // ── Education (purple) ────────────────────────────────────────────────────
+    if (data.education) {
+      const edu = data.education.toLowerCase();
+      if (edu.includes('bachelor')) {
+        add("Bachelor's degree",   'ji-hl ji-hl--edu');
+        add("Bachelor of Science", 'ji-hl ji-hl--edu');
+        add("Bachelor of Arts",    'ji-hl ji-hl--edu');
+        add("B.S.",                'ji-hl ji-hl--edu');
+        add("B.A.",                'ji-hl ji-hl--edu');
+        add("BS degree",           'ji-hl ji-hl--edu');
+        add("BA degree",           'ji-hl ji-hl--edu');
+        add("Bachelor's",          'ji-hl ji-hl--edu');
+        add("undergraduate degree",'ji-hl ji-hl--edu');
+      }
+      if (edu.includes('master')) {
+        add("Master's degree",   'ji-hl ji-hl--edu');
+        add("Master of Science", 'ji-hl ji-hl--edu');
+        add("Master of Arts",    'ji-hl ji-hl--edu');
+        add("M.S.",              'ji-hl ji-hl--edu');
+        add("M.A.",              'ji-hl ji-hl--edu');
+        add("MS degree",         'ji-hl ji-hl--edu');
+        add("Master's",          'ji-hl ji-hl--edu');
+        add("graduate degree",   'ji-hl ji-hl--edu');
+      }
+      if (edu.includes('mba')) {
+        add("MBA", 'ji-hl ji-hl--edu');
+      }
+      if (edu.includes('phd') || edu.includes('doctorate')) {
+        add("Ph.D.",            'ji-hl ji-hl--edu');
+        add("PhD",              'ji-hl ji-hl--edu');
+        add("doctorate",        'ji-hl ji-hl--edu');
+        add("doctoral degree",  'ji-hl ji-hl--edu');
+        add("doctoral program", 'ji-hl ji-hl--edu');
+      }
+      if (edu.includes('high school') || edu.includes('ged')) {
+        add("high school diploma", 'ji-hl ji-hl--edu');
+        add("GED",                 'ji-hl ji-hl--edu');
+        add("high school degree",  'ji-hl ji-hl--edu');
+      }
+      if (edu.includes('equivalent')) {
+        add("equivalent experience",      'ji-hl ji-hl--edu');
+        add("equivalent work experience", 'ji-hl ji-hl--edu');
+        add("or equivalent",              'ji-hl ji-hl--edu');
+      }
+    }
+
+    // ── Sponsorship (amber) ───────────────────────────────────────────────────
     if (data.sponsorship === 'Sponsors') {
-      terms.add('H1B');
-      terms.add('H-1B');
-      terms.add('visa sponsor');
-      terms.add('visa sponsorship');
+      add("visa sponsorship",         'ji-hl ji-hl--sponsor');
+      add("visa sponsor",             'ji-hl ji-hl--sponsor');
+      add("work visa",                'ji-hl ji-hl--sponsor');
+      add("work authorization",       'ji-hl ji-hl--sponsor');
+      add("we will sponsor",          'ji-hl ji-hl--sponsor');
+      add("able to sponsor",          'ji-hl ji-hl--sponsor');
+      add("sponsorship available",    'ji-hl ji-hl--sponsor');
+      add("sponsorship provided",     'ji-hl ji-hl--sponsor');
+      add("H-1B",                     'ji-hl ji-hl--sponsor');
+      add("H1B",                      'ji-hl ji-hl--sponsor');
+    } else if (data.sponsorship === 'Does Not Sponsor') {
+      add("unable to sponsor",                'ji-hl ji-hl--sponsor');
+      add("not able to sponsor",              'ji-hl ji-hl--sponsor');
+      add("will not sponsor",                 'ji-hl ji-hl--sponsor');
+      add("cannot sponsor",                   'ji-hl ji-hl--sponsor');
+      add("does not sponsor",                 'ji-hl ji-hl--sponsor');
+      add("do not sponsor",                   'ji-hl ji-hl--sponsor');
+      add("no visa sponsorship",              'ji-hl ji-hl--sponsor');
+      add("sponsorship is not available",     'ji-hl ji-hl--sponsor');
+      add("sponsorship not available",        'ji-hl ji-hl--sponsor');
+      add("not provide sponsorship",          'ji-hl ji-hl--sponsor');
+      add("authorized to work",               'ji-hl ji-hl--sponsor');
+      add("must be authorized",               'ji-hl ji-hl--sponsor');
+      add("authorization to work",            'ji-hl ji-hl--sponsor');
     }
 
-    // US citizenship / clearance
+    // ── US Citizenship / Clearance (red) ──────────────────────────────────────
     if (data.usCitizenshipRequired === 'Required') {
-      terms.add('US citizen');
-      terms.add('United States citizen');
-      terms.add('citizenship required');
-      terms.add('security clearance');
-      terms.add('clearance');
+      add("US citizen",              'ji-hl ji-hl--citizen');
+      add("U.S. citizen",            'ji-hl ji-hl--citizen');
+      add("United States citizen",   'ji-hl ji-hl--citizen');
+      add("must be a US citizen",    'ji-hl ji-hl--citizen');
+      add("citizenship required",    'ji-hl ji-hl--citizen');
+      add("citizenship is required", 'ji-hl ji-hl--citizen');
+      add("security clearance",      'ji-hl ji-hl--citizen');
+      add("active clearance",        'ji-hl ji-hl--citizen');
+      add("active secret",           'ji-hl ji-hl--citizen');
+      add("Top Secret",              'ji-hl ji-hl--citizen');
+      add("TS/SCI",                  'ji-hl ji-hl--citizen');
+      add("Secret clearance",        'ji-hl ji-hl--citizen');
+      add("government clearance",    'ji-hl ji-hl--citizen');
     }
 
-    // Minimum 2 chars; longest first so longer phrases take priority over sub-phrases
-    return [...terms].filter(t => t && t.trim().length >= 2)
-      .sort((a, b) => b.length - a.length);
+    // Longest first so longer phrases shadow shorter sub-phrases
+    return entries.sort((a, b) => b.term.length - a.term.length);
   }
 
   function applyHighlights(data) {
     const descEl = getDescriptionElement();
     if (!descEl) return;
 
-    const terms = buildTerms(data);
-    if (!terms.length) return;
+    const entries = buildTerms(data);
+    if (!entries.length) return;
 
-    // Wrap each term in lookahead/lookbehind word boundaries.
-    // This prevents "TS" matching inside "tests", "AWS" inside "passwords", etc.
-    // Lookahead/lookbehind is used instead of \b so terms containing special
-    // characters (C++, .NET, H-1B) are also bounded correctly.
-    const boundedPatterns = terms.map(t => {
-      const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Map lowercased term → CSS class string for O(1) lookup during span creation
+    const classMap = new Map(entries.map(({ term, cls }) => [term.toLowerCase(), cls]));
+
+    // Per-term word-boundary patterns — prevents "TS" matching inside "tests", etc.
+    const boundedPatterns = entries.map(({ term }) => {
+      const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return `(?<![a-zA-Z0-9_])(?:${esc})(?![a-zA-Z0-9_])`;
     });
-    const regex = new RegExp(`(${boundedPatterns.join('|')})`, 'gi');
+    const testRegex = new RegExp(`(${boundedPatterns.join('|')})`, 'gi');
 
     // Walk text nodes only — never touch element nodes directly
     const walker = document.createTreeWalker(
@@ -638,7 +726,6 @@
       NodeFilter.SHOW_TEXT,
       {
         acceptNode(node) {
-          // Skip already-highlighted spans and script/style
           const tag = node.parentElement?.tagName;
           if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
           if (node.parentElement?.classList?.contains('ji-hl')) return NodeFilter.FILTER_REJECT;
@@ -650,32 +737,27 @@
     const toReplace = [];
     let node;
     while ((node = walker.nextNode())) {
-      if (regex.test(node.textContent)) toReplace.push(node);
-      regex.lastIndex = 0;
+      if (testRegex.test(node.textContent)) toReplace.push(node);
+      testRegex.lastIndex = 0;
     }
 
     toReplace.forEach(textNode => {
-      const text = textNode.textContent;
+      const text    = textNode.textContent;
       const localRe = new RegExp(boundedPatterns.join('|'), 'gi');
       const fragment = document.createDocumentFragment();
-      let last = 0;
-      let m;
+      let last = 0, m;
 
       while ((m = localRe.exec(text)) !== null) {
-        if (m.index > last) {
-          fragment.appendChild(document.createTextNode(text.slice(last, m.index)));
-        }
+        if (m.index > last) fragment.appendChild(document.createTextNode(text.slice(last, m.index)));
+
         const span = document.createElement('span');
-        span.className = 'ji-hl';
+        span.className = classMap.get(m[0].toLowerCase()) || 'ji-hl ji-hl--keyword';
         span.textContent = m[0];
         fragment.appendChild(span);
         last = m.index + m[0].length;
       }
 
-      if (last < text.length) {
-        fragment.appendChild(document.createTextNode(text.slice(last)));
-      }
-
+      if (last < text.length) fragment.appendChild(document.createTextNode(text.slice(last)));
       textNode.parentNode?.replaceChild(fragment, textNode);
     });
   }
