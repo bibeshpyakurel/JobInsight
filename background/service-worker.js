@@ -1,8 +1,7 @@
 // JobInsight Background Service Worker
 
 // ─── Backend URL ──────────────────────────────────────────────────────────────
-// Replace with your deployed backend URL (e.g. https://jobinsight-api.onrender.com)
-const BACKEND_URL = 'http://localhost:3000';
+const BACKEND_URL = 'https://jobinsight-6nyq.onrender.com';
 
 // ─── Message listener ─────────────────────────────────────────────────────────
 

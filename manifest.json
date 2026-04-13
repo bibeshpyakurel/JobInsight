@@ -8,7 +8,7 @@
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://www.googleapis.com/*",
-    "http://localhost:3000/*"
+    "https://jobinsight-6nyq.onrender.com/*"
   ],
   "oauth2": {
     "client_id": "958968017622-fh9cn92tsf5vm06i0s4aoq296pom57vh.apps.googleusercontent.com",

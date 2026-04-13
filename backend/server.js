@@ -121,6 +121,14 @@ ${jobDescription.slice(0, 4000)}`;
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'JobInsight API',
+    status: 'ok',
+    health: '/api/health'
+  });
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
