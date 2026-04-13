@@ -48,10 +48,7 @@
   let lastJobId    = getJobId();
   let navDebounce  = null;
 
-  // Debounce the MutationObserver — LinkedIn fires hundreds of DOM mutations/sec.
-  // Without this, getJobId() (URLSearchParams) runs on every mutation, blocking
-  // the main thread and making everything feel slow.
-  const navObserver = new MutationObserver(() => {
+  function checkNavChange() {
     clearTimeout(navDebounce);
     navDebounce = setTimeout(() => {
       const id = getJobId();
@@ -59,9 +56,23 @@
         lastJobId = id;
         onJobChange(id);
       }
-    }, 80); // 80ms — fast enough to feel instant, cheap enough not to block
-  });
+    }, 80);
+  }
+
+  // 1. MutationObserver — catches DOM-driven navigation (most LinkedIn transitions)
+  const navObserver = new MutationObserver(checkNavChange);
   navObserver.observe(document.body, { childList: true, subtree: true });
+
+  // 2. Intercept history.pushState / replaceState — LinkedIn SPA uses these heavily.
+  //    pushState does NOT fire popstate, so the observer alone can miss URL changes
+  //    that happen before any DOM mutations arrive.
+  const _push    = history.pushState.bind(history);
+  const _replace = history.replaceState.bind(history);
+  history.pushState    = (...a) => { _push(...a);    checkNavChange(); };
+  history.replaceState = (...a) => { _replace(...a); checkNavChange(); };
+
+  // 3. popstate — back/forward button navigation
+  window.addEventListener('popstate', checkNavChange);
 
   // Initial trigger — fires immediately if a job is already visible on page load
   onJobChange(getJobId());
@@ -173,14 +184,12 @@
   }
 
   function isJobDetailPage() {
-    if (!/linkedin\.com\/jobs\//.test(location.href)) return false;
-
-    return Boolean(
-      getJobId() ||
-      document.querySelector(
-        '.job-details-jobs-unified-top-card__job-title h1, .jobs-unified-top-card__job-title h1, .topcard__title, .jobs-search__job-details--container, .scaffold-layout__detail'
-      )
-    );
+    // Must be under linkedin.com/jobs/ AND have a resolvable job ID.
+    // We intentionally do not fall back to DOM-only detection here — broad
+    // containers like .scaffold-layout__detail exist on the jobs home page
+    // and search pages even when no specific job is selected, which would
+    // cause false triggers and a stuck loading overlay.
+    return /linkedin\.com\/jobs\//.test(location.href) && Boolean(getJobId());
   }
 
   // ─── Job Data Extraction ────────────────────────────────────────────────────
@@ -424,7 +433,15 @@
       case 'error':
         statusEl.textContent = 'Error';
         statusEl.className = 'ji-status ji-status--error';
-        body.innerHTML = `<div class="ji-message ji-message--error">⚠ ${escHtml(data.message || 'Unknown error')}</div>`;
+        body.innerHTML = `
+          <div class="ji-message ji-message--error">⚠ ${escHtml(data.message || 'Unknown error')}</div>
+          <div class="ji-section ji-section--highlight">
+            <button class="ji-btn-highlight" id="ji-retry-btn">Try Again</button>
+          </div>`;
+        overlayEl.querySelector('#ji-retry-btn')?.addEventListener('click', () => {
+          currentJobId = null;
+          onJobChange(getJobId());
+        });
         break;
 
       case 'results':

@@ -17,11 +17,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ─── Backend proxy call ───────────────────────────────────────────────────────
 
 async function analyzeJob({ jobDescription, userEmail }) {
-  const response = await fetch(`${BACKEND_URL}/api/analyze`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jobDescription, userEmail })
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000); // 30-second timeout
+
+  let response;
+  try {
+    response = await fetch(`${BACKEND_URL}/api/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobDescription, userEmail }),
+      signal: controller.signal
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. The server may be waking up — please try again in a moment.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   const data = await response.json();
 
