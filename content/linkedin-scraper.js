@@ -14,8 +14,27 @@
     '.job-view-layout .jobs-description'
   ];
 
-  // Cache: jobId → { aiResult, h1bData }
+  // L1 in-memory cache: jobId → aiResult — instant, session-only
   const analysisCache = new Map();
+
+  // L2 persistent cache helpers — AI results survive page reloads (7-day TTL)
+  const JOB_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+
+  async function loadPersistedJob(jobId) {
+    try {
+      const key    = `ji_job:${jobId}`;
+      const result = await chrome.storage.local.get(key);
+      const entry  = result[key];
+      if (entry && entry.ts && (Date.now() - entry.ts) < JOB_CACHE_TTL) return entry.aiResult;
+    } catch (_) {}
+    return null;
+  }
+
+  function persistJob(jobId, aiResult) {
+    // Fire-and-forget — never block the UI on a storage write
+    chrome.storage.local.set({ [`ji_job:${jobId}`]: { aiResult, ts: Date.now() } })
+      .catch(() => {});
+  }
 
   let currentJobId   = null;
   let overlayEl      = null;
@@ -44,7 +63,7 @@
   // Initial trigger — fires immediately if a job is already visible on page load
   onJobChange(getJobId());
 
-  function onJobChange(jobId) {
+  async function onJobChange(jobId) {
     contentWatcher?.disconnect();
     contentWatcher = null;
 
@@ -53,45 +72,42 @@
       return;
     }
 
-    // ── Cache hit: show results instantly, no API call needed ─────────────────
+    // ── L1: In-memory cache — instant, no I/O ────────────────────────────────
     if (analysisCache.has(jobId)) {
-      const { aiResult, h1bData } = analysisCache.get(jobId);
       currentJobId = jobId;
+      const aiResult = analysisCache.get(jobId);
       showOverlay('results', aiResult);
-      setupH1BAccordion(() => h1bData);
       setupSummaryAccordion();
       setupHighlightToggle(aiResult);
-      updateH1BBadge(h1bData);
       return;
     }
 
-    // ── New job: show loading overlay immediately using whatever we know now ──
-    // extractEarlyInfo() reads the job card / detail header which loads before
-    // the full description, giving the user instant visual feedback.
+    // ── L2: Persistent storage cache — survives page reloads ─────────────────
+    const persistedAI = await loadPersistedJob(jobId);
+    // Guard: user may have navigated to a different job during the storage read
+    if (jobId !== getJobId() || !isJobDetailPage()) return;
+
+    if (persistedAI) {
+      currentJobId = jobId;
+      analysisCache.set(jobId, persistedAI);
+      showOverlay('results', persistedAI);
+      setupSummaryAccordion();
+      setupHighlightToggle(persistedAI);
+      return;
+    }
+
+    // ── L3: Network — first time seeing this job ──────────────────────────────
     const early = extractEarlyInfo();
     showOverlay('loading', early);
 
-    // Shared state object — both H1B and AI callbacks write to the same reference
-    // so whichever finishes last always has the full picture.
-    const jobState = { h1bData: null }; // null=loading, false=none, object=found
-
-    if (early.company) {
-      chrome.runtime.sendMessage({ type: 'LOOKUP_H1B', company: early.company }, (res) => {
-        jobState.h1bData = (res && !res.error && Object.keys(res).length > 0) ? res : false;
-        updateH1BBadge(jobState.h1bData);
-        // If AI already finished and stored the cache entry, backfill it
-        if (analysisCache.has(jobId)) analysisCache.get(jobId).h1bData = jobState.h1bData;
-      });
-    }
-
     if (getDescriptionElement()) {
-      tryAnalyze(jobId, jobState, early);
+      tryAnalyze(jobId, early);
     } else {
-      watchForContent(jobId, jobState, early);
+      watchForContent(jobId, early);
     }
   }
 
-  function watchForContent(jobId, jobState, early) {
+  function watchForContent(jobId, early) {
     // Poll every 150ms instead of a MutationObserver on the whole body.
     // Cheaper on CPU, still fast enough to feel instant (avg wait < 300ms).
     let attempts = 0;
@@ -102,7 +118,7 @@
       if (getDescriptionElement()) {
         clearInterval(poll);
         contentWatcher = null;
-        tryAnalyze(jobId, jobState, early);
+        tryAnalyze(jobId, early);
       } else if (attempts >= MAX) {
         clearInterval(poll);
         contentWatcher = null;
@@ -127,6 +143,61 @@
     return null;
   }
 
+  // ─── Company Name Resolution (shared, multi-strategy) ──────────────────────
+
+  const COMPANY_SELECTORS = [
+    // Detail pane — current LinkedIn DOM (2024-2025)
+    '.job-details-jobs-unified-top-card__company-name a',
+    '.job-details-jobs-unified-top-card__company-name',
+    // Older / alternate layouts
+    '.jobs-unified-top-card__company-name a',
+    '.jobs-unified-top-card__company-name',
+    '.topcard__org-name-link',
+    '[data-tracking-control-name="public_jobs_topcard-org-name"]',
+    // Job card (selected item in list view)
+    '.job-card-container--selected .job-card-container__company-name',
+    '.jobs-search-results-list__list-item--active .job-card-container__company-name',
+    // Generic fallbacks
+    '[class*="company-name"] a',
+    '[class*="company-name"]',
+    '[class*="topcard__flavor"] a',
+    '[class*="topcard__flavor"]'
+  ];
+
+  function resolveCompanyName(descriptionText) {
+    // Strategy 1: DOM selectors
+    for (const sel of COMPANY_SELECTORS) {
+      const text = document.querySelector(sel)?.textContent?.trim();
+      if (text && text.length > 0 && text.length < 120) return text;
+    }
+
+    // Strategy 2: page <title> — LinkedIn formats it as "Job Title at Company | LinkedIn"
+    // or "Job Title - Company | LinkedIn"
+    const titleText = document.title || '';
+    const titleMatch = titleText.match(/(?:\bat\b\s+|[-–]\s+)([^|]+?)\s*(?:\||$)/i);
+    if (titleMatch) {
+      const candidate = titleMatch[1].trim();
+      // Reject if it looks like a generic page title word
+      if (candidate.length > 1 && !/^linkedin$/i.test(candidate)) return candidate;
+    }
+
+    // Strategy 3: og:title meta tag (same format as page title)
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
+    const ogMatch = ogTitle.match(/(?:\bat\b\s+|[-–]\s+)([^|]+?)\s*(?:\||$)/i);
+    if (ogMatch) {
+      const candidate = ogMatch[1].trim();
+      if (candidate.length > 1 && !/^linkedin$/i.test(candidate)) return candidate;
+    }
+
+    // Strategy 4: scan job description for "About [Company]" section header
+    if (descriptionText) {
+      const aboutMatch = descriptionText.match(/\bAbout\s+([A-Z][A-Za-z0-9& ,.'()-]{1,60}?)[\r\n:]/);
+      if (aboutMatch) return aboutMatch[1].trim();
+    }
+
+    return '';
+  }
+
   function extractJobData() {
     const descEl = getDescriptionElement();
 
@@ -135,26 +206,7 @@
     const description = descEl.textContent.trim();
     if (description.length < 100) return null;
 
-    // Company name
-    const companySelectors = [
-      '.job-details-jobs-unified-top-card__company-name a',
-      '.job-details-jobs-unified-top-card__company-name',
-      '.jobs-unified-top-card__company-name a',
-      '.topcard__org-name-link',
-      '[data-tracking-control-name="public_jobs_topcard-org-name"]',
-      '[class*="company-name"] a',
-      '[class*="company-name"]'
-    ];
-
-    let company = 'Unknown Company';
-    for (const sel of companySelectors) {
-      const el = document.querySelector(sel);
-      const text = el?.textContent?.trim();
-      if (text && text.length > 0) {
-        company = text;
-        break;
-      }
-    }
+    const company = resolveCompanyName(description) || 'Unknown Company';
 
     // Job title (for display in overlay header)
     const titleSelectors = [
@@ -201,27 +253,19 @@
       '.job-card-container--selected .job-card-list__title',
       '.jobs-search-results-list__list-item--active .job-card-list__title'
     ];
-    const companySelectors = [
-      '.job-details-jobs-unified-top-card__company-name a',
-      '.job-details-jobs-unified-top-card__company-name',
-      '.jobs-unified-top-card__company-name a',
-      '.topcard__org-name-link',
-      '[class*="company-name"] a',
-      '[class*="company-name"]',
-      // Job list card
-      '.job-card-container--selected .job-card-container__company-name',
-      '.jobs-search-results-list__list-item--active .job-card-container__company-name'
-    ];
 
-    let title = '', company = '';
-    for (const s of titleSelectors)   { const t = document.querySelector(s)?.textContent?.trim(); if (t) { title   = t; break; } }
-    for (const s of companySelectors) { const t = document.querySelector(s)?.textContent?.trim(); if (t) { company = t; break; } }
+    let title = '';
+    for (const s of titleSelectors) { const t = document.querySelector(s)?.textContent?.trim(); if (t) { title = t; break; } }
+
+    // Use shared resolver — no description text available yet at this early stage
+    const company = resolveCompanyName('');
+
     return { title, company };
   }
 
   // ─── Analysis Flow ──────────────────────────────────────────────────────────
 
-  async function tryAnalyze(jobId, jobState, early = {}) {
+  async function tryAnalyze(jobId, early = {}) {
     if (jobId !== getJobId()) return; // user navigated away before description loaded
     if (jobId === currentJobId) return; // already running
     currentJobId = jobId;
@@ -235,15 +279,6 @@
     const company = jobData.company || early.company || '';
     const title   = jobData.title   || early.title   || '';
 
-    // If H1B lookup couldn't start early (no company name from card), start it now
-    if (jobState.h1bData === null && company && !early.company) {
-      chrome.runtime.sendMessage({ type: 'LOOKUP_H1B', company }, (res) => {
-        jobState.h1bData = (res && !res.error && Object.keys(res).length > 0) ? res : false;
-        updateH1BBadge(jobState.h1bData);
-        if (analysisCache.has(jobId)) analysisCache.get(jobId).h1bData = jobState.h1bData;
-      });
-    }
-
     // Cap at 4000 chars — covers all relevant content in any job posting.
     // Sending 15,000-char descriptions triples token count and API latency for no gain.
     const trimmedDescription = jobData.description.slice(0, 4000);
@@ -256,15 +291,14 @@
 
         const aiResult = { ...result, company, title };
 
-        // Save to cache — h1bData may still be loading; H1B callback will backfill it
-        analysisCache.set(jobId, { aiResult, h1bData: jobState.h1bData });
+        // L1: in-memory cache
+        analysisCache.set(jobId, aiResult);
+        // L2: persist so next page load skips the OpenAI call entirely
+        persistJob(jobId, aiResult);
 
         showOverlay('results', aiResult);
-        // Getter always reads the live cache entry so it works whether H1B finishes before or after AI
-        setupH1BAccordion(() => analysisCache.get(jobId)?.h1bData);
         setupSummaryAccordion();
         setupHighlightToggle(result);
-        updateH1BBadge(jobState.h1bData);
       }
     );
   }
@@ -332,7 +366,6 @@
           <span class="ji-logo">⚡ JobInsight</span>
           <div class="ji-header-right">
             <span class="ji-status"></span>
-            <button class="ji-btn-minimize" title="Minimize">−</button>
           </div>
         </div>
         <div class="ji-position-banner">
@@ -342,15 +375,6 @@
       </div>
     `;
 
-    // Minimize toggle
-    let minimized = false;
-    const body = overlayEl.querySelector('.ji-body');
-    overlayEl.querySelector('.ji-btn-minimize').addEventListener('click', () => {
-      minimized = !minimized;
-      body.style.display = minimized ? 'none' : 'block';
-      overlayEl.querySelector('.ji-btn-minimize').textContent = minimized ? '+' : '−';
-    });
-
     attachInteractions(overlayEl);
     document.body.appendChild(overlayEl);
   }
@@ -359,9 +383,8 @@
 
   function renderLoading() {
     const labels = [
-      'Experience', 'Education', 'E-Verify',
-      'H1B Sponsorship', 'Security Clearance',
-      'H1B History', 'Summary', 'Keywords'
+      'Experience', 'Education', 'Sponsorship',
+      'US Citizenship', 'Summary', 'Keywords'
     ];
     return `<div class="ji-loading-list">
       ${labels.map(l => `
@@ -373,10 +396,6 @@
   }
 
   function renderResults(d) {
-    const clearanceLabel = d.securityClearance === 'Yes' && d.securityClearanceDetail
-      ? `Required: ${d.securityClearanceDetail}`
-      : (d.securityClearance === 'Yes' ? 'Required' : 'Not Required');
-
     return `
       <div class="ji-sections">
 
@@ -391,35 +410,14 @@
               <div class="ji-value ji-value--small">${escHtml(d.education || 'Degree Not Specified')}</div>
             </div>
             <div class="ji-field">
-              <div class="ji-label">E-Verify</div>
-              <div class="ji-value">${binaryBadge(d.eVerify, 'Confirmed', 'Not Confirmed')}</div>
-            </div>
-            <div class="ji-field">
-              <div class="ji-label">H1B Sponsorship</div>
-              <div class="ji-value">${binaryBadge(d.h1bSponsorship, 'Sponsored', 'Not Sponsored')}</div>
+              <div class="ji-label">Sponsorship</div>
+              <div class="ji-value">${sponsorshipBadge(d.sponsorship)}</div>
             </div>
             <div class="ji-field ji-field--full">
-              <div class="ji-label">Security Clearance</div>
-              <div class="ji-value">${binaryBadge(d.securityClearance, clearanceLabel, 'Not Required')}</div>
+              <div class="ji-label">US Citizenship Requirement</div>
+              <div class="ji-value">${citizenshipBadge(d.usCitizenshipRequired)}</div>
             </div>
           </div>
-        </div>
-
-        <div class="ji-section">
-          <div class="ji-h1b-header">
-            <div>
-              <div class="ji-label">H1B History</div>
-              <div class="ji-h1b-company">${escHtml(d.company)}</div>
-            </div>
-            <div id="ji-h1b-badge">
-              <span class="ji-h1b-checking">Checking…</span>
-            </div>
-          </div>
-          <div class="ji-accordion-trigger" id="ji-h1b-trigger">
-            <span>View year-by-year breakdown</span>
-            <span class="ji-chevron">▼</span>
-          </div>
-          <div class="ji-accordion-body" id="ji-h1b-body"></div>
         </div>
 
         <div class="ji-section">
@@ -442,78 +440,17 @@
       </div>`;
   }
 
-  // Always green or red — no neutral state
-  function binaryBadge(val, greenLabel, redLabel) {
-    const isYes = (val || '').toLowerCase() === 'yes';
-    const cls = isYes ? 'ji-badge ji-badge--green' : 'ji-badge ji-badge--red';
-    return `<span class="${cls}">${escHtml(isYes ? greenLabel : redLabel)}</span>`;
+  function sponsorshipBadge(val) {
+    const v = (val || '').toLowerCase();
+    if (v === 'sponsors') return `<span class="ji-badge ji-badge--green">Sponsors</span>`;
+    if (v === 'does not sponsor') return `<span class="ji-badge ji-badge--red">Does Not Sponsor</span>`;
+    return `<span class="ji-badge ji-badge--gray">Not Mentioned</span>`;
   }
 
-  // getH1B is a function () => h1bData so it always reads the latest value
-  function setupH1BAccordion(getH1B) {
-    const trigger = overlayEl?.querySelector('#ji-h1b-trigger');
-    const bodyEl  = overlayEl?.querySelector('#ji-h1b-body');
-    if (!trigger || !bodyEl) return;
-
-    let open = false;
-
-    trigger.addEventListener('click', () => {
-      open = !open;
-      bodyEl.style.display = open ? 'block' : 'none';
-      trigger.querySelector('.ji-chevron').textContent = open ? '▲' : '▼';
-
-      if (!open) return;
-
-      const result = getH1B();
-
-      if (result === null) {
-        // Still loading — show spinner; badge update will re-render when ready
-        bodyEl.innerHTML = '<div class="ji-h1b-msg">Loading H1B data…</div>';
-        return;
-      }
-
-      renderH1BTable(bodyEl, result);
-    });
-  }
-
-  function renderH1BTable(bodyEl, result) {
-    if (!result || Object.keys(result).length === 0) {
-      bodyEl.innerHTML = '<div class="ji-h1b-msg">No H1B filing data found for this employer.</div>';
-      return;
-    }
-    const total = Object.values(result).reduce((a, b) => a + b, 0);
-    bodyEl.innerHTML = `
-      <div class="ji-h1b-total">Total filings: <strong>${total.toLocaleString()}</strong></div>
-      <div class="ji-h1b-table">
-        <div class="ji-h1b-row ji-h1b-head"><span>Year</span><span>Filings</span></div>
-        ${Object.entries(result).map(([yr, cnt]) => `
-          <div class="ji-h1b-row"><span>${yr}</span><span>${cnt.toLocaleString()}</span></div>
-        `).join('')}
-      </div>`;
-  }
-
-  function updateH1BBadge(h1bData) {
-    const badgeEl = overlayEl?.querySelector('#ji-h1b-badge');
-    if (!badgeEl) return; // overlay not rendered yet — will be applied after render
-
-    if (h1bData === null) {
-      // Still loading
-      badgeEl.innerHTML = '<span class="ji-h1b-checking">Checking…</span>';
-      return;
-    }
-
-    const hasHistory = h1bData && Object.keys(h1bData).length > 0;
-    const total = hasHistory ? Object.values(h1bData).reduce((a, b) => a + b, 0) : 0;
-
-    badgeEl.innerHTML = hasHistory
-      ? `<span class="ji-badge ji-badge--green">✓ ${total.toLocaleString()} filings</span>`
-      : `<span class="ji-badge ji-badge--red">✗ No history</span>`;
-
-    // If the accordion body is open and was showing a loading spinner, fill it now
-    const bodyEl = overlayEl?.querySelector('#ji-h1b-body');
-    if (bodyEl?.style.display === 'block') {
-      renderH1BTable(bodyEl, h1bData);
-    }
+  function citizenshipBadge(val) {
+    const v = (val || '').toLowerCase();
+    if (v === 'required') return `<span class="ji-badge ji-badge--red">Required</span>`;
+    return `<span class="ji-badge ji-badge--gray">Not Mentioned</span>`;
   }
 
   function setupSummaryAccordion() {
@@ -521,8 +458,9 @@
     const bodyEl = overlayEl?.querySelector('#ji-summary-body');
     if (!trigger || !bodyEl) return;
 
-    // Collapsed by default — user expands when needed
-    bodyEl.style.display = 'none';
+    // Expanded by default
+    bodyEl.style.display = 'block';
+    trigger.querySelector('.ji-chevron').textContent = '▲';
 
     trigger.addEventListener('click', () => {
       const open = bodyEl.style.display === 'block';
@@ -542,7 +480,7 @@
     const terms = new Set();
 
     // Keywords — highest priority
-    (data.keywords || []).forEach(k => { if (k?.length >= 2) terms.add(k); });
+    (data.keywords || []).forEach(k => { if (k?.trim().length >= 2) terms.add(k.trim()); });
 
     // Education — pull meaningful words from the category label
     if (data.education) {
@@ -552,39 +490,32 @@
       (eduMatches || []).forEach(w => terms.add(w));
     }
 
-    // Experience — extract the numeric range or phrase
+    // Experience — add phrase only (not bare digits, which are too noisy)
     if (data.yearsOfExperience && data.yearsOfExperience !== 'Not specified') {
-      const nums = data.yearsOfExperience.match(/\d+\+?/g);
-      (nums || []).forEach(n => terms.add(n));
-      // Also add "years of experience" variants
       terms.add('years of experience');
       terms.add('years experience');
     }
 
-    // E-Verify
-    if (data.eVerify === 'Yes') {
-      terms.add('E-Verify');
-      terms.add('E-verify');
-    }
-
-    // H1B
-    if (data.h1bSponsorship === 'Yes') {
+    // Sponsorship
+    if (data.sponsorship === 'Sponsors') {
       terms.add('H1B');
       terms.add('H-1B');
       terms.add('visa sponsor');
-      terms.add('sponsorship');
+      terms.add('visa sponsorship');
     }
 
-    // Security clearance
-    if (data.securityClearance === 'Yes') {
-      terms.add('clearance');
+    // US citizenship / clearance
+    if (data.usCitizenshipRequired === 'Required') {
+      terms.add('US citizen');
+      terms.add('United States citizen');
+      terms.add('citizenship required');
       terms.add('security clearance');
-      if (data.securityClearanceDetail) terms.add(data.securityClearanceDetail);
+      terms.add('clearance');
     }
 
-    // Filter: min 2 chars, avoid pure numbers shorter than 2 digits
+    // Minimum 2 chars; longest first so longer phrases take priority over sub-phrases
     return [...terms].filter(t => t && t.trim().length >= 2)
-      .sort((a, b) => b.length - a.length); // longest first avoids partial overlaps
+      .sort((a, b) => b.length - a.length);
   }
 
   function applyHighlights(data) {
@@ -594,8 +525,15 @@
     const terms = buildTerms(data);
     if (!terms.length) return;
 
-    const escaped = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+    // Wrap each term in lookahead/lookbehind word boundaries.
+    // This prevents "TS" matching inside "tests", "AWS" inside "passwords", etc.
+    // Lookahead/lookbehind is used instead of \b so terms containing special
+    // characters (C++, .NET, H-1B) are also bounded correctly.
+    const boundedPatterns = terms.map(t => {
+      const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return `(?<![a-zA-Z0-9_])(?:${esc})(?![a-zA-Z0-9_])`;
+    });
+    const regex = new RegExp(`(${boundedPatterns.join('|')})`, 'gi');
 
     // Walk text nodes only — never touch element nodes directly
     const walker = document.createTreeWalker(
@@ -621,7 +559,7 @@
 
     toReplace.forEach(textNode => {
       const text = textNode.textContent;
-      const localRe = new RegExp(escaped.join('|'), 'gi');
+      const localRe = new RegExp(boundedPatterns.join('|'), 'gi');
       const fragment = document.createDocumentFragment();
       let last = 0;
       let m;
@@ -683,8 +621,6 @@
 
     // ── Start interaction ─────────────────────────────────────────────────────
     el.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.ji-btn-minimize')) return;
-
       const rect = el.getBoundingClientRect();
       const dir  = getEdgeDir(e, el, EDGE);
 
@@ -736,13 +672,12 @@
       el.style.bottom = 'auto';
       el.style.width  = `${W}px`;
 
-      const inner  = el.querySelector('.ji-inner');
-      const header = el.querySelector('.ji-header');
-      const banner = el.querySelector('.ji-position-banner');
-      const body   = el.querySelector('.ji-body');
-      if (inner) inner.style.height = `${H}px`;
-      if (body)  body.style.maxHeight =
-        `${H - (header?.offsetHeight || 0) - (banner?.offsetHeight || 0)}px`;
+      const inner = el.querySelector('.ji-inner');
+      // Set the inner container to the dragged height; flex handles body sizing
+      if (inner) {
+        inner.style.height    = `${H}px`;
+        inner.style.maxHeight = `${H}px`;
+      }
     });
 
     // ── End ───────────────────────────────────────────────────────────────────

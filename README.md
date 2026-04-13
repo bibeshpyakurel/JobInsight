@@ -1,58 +1,51 @@
-# JobInsight — LinkedIn Job Analyzer Chrome Extension
+# JobInsight — LinkedIn Job Analyzer
 
-AI-powered floating overlay that automatically analyzes LinkedIn job listings.
+A Chrome extension that automatically analyzes LinkedIn job postings and shows a floating overlay with key details extracted by AI.
 
-## Features
+## What it shows
 
-| Feature | Source |
-|---|---|
-| Years of experience required | Extracted from job description via AI |
-| Education requirements | Extracted from job description via AI |
-| E-Verify status | Extracted from job description via AI |
-| H1B sponsorship | Extracted from job description via AI |
-| Security clearance | Extracted from job description via AI |
-| Job summary | AI-generated 2-3 sentence overview |
-| Job-specific keywords | AI-extracted technical keywords |
-| H1B filing history by year | h1bdata.info (click to expand) |
+- **Experience** — years required
+- **Education** — degree level and whether required or preferred
+- **Sponsorship** — Sponsors / Does Not Sponsor / Not Mentioned
+- **US Citizenship** — flags if citizenship or security clearance is required
+- **Summary** — 2-3 sentence overview of the role
+- **Keywords** — job-specific technical terms, highlighted in the job description
 
 ## Installation
 
-1. Open Chrome and go to `chrome://extensions`
-2. Enable **Developer Mode** (toggle in top-right)
-3. Click **Load unpacked**
-4. Select this folder (`JobInsight/`)
+1. Go to `chrome://extensions` in Chrome
+2. Enable **Developer Mode** (top-right toggle)
+3. Click **Load unpacked** and select this folder
 
 ## Setup
 
 1. Click the **JobInsight** icon in the Chrome toolbar
-2. Enter your [Claude API key](https://console.anthropic.com/keys) (free to create)
+2. Enter your [OpenAI API key](https://platform.openai.com/api-keys)
 3. Click **Save**
 
-Your key is stored locally in Chrome storage and only sent to the Anthropic API.
+Your key is stored locally in Chrome and only sent to the OpenAI API.
 
 ## Usage
 
-Open any LinkedIn job listing — the overlay appears automatically in the top-right corner.
+Open any LinkedIn job listing — the overlay appears automatically in the top-right corner. Drag it to reposition, or resize it from any edge.
 
-- **Drag** the overlay to reposition it
-- **−** button minimizes it
-- Click **H1B History** to expand year-by-year filing counts
+Results are cached for 7 days so re-opening the same job is instant.
 
-## File Structure
+## File structure
 
 ```
 JobInsight/
-├── manifest.json                  # Chrome extension config (Manifest V3)
+├── manifest.json               # Chrome MV3 config
 ├── background/
-│   └── service-worker.js          # Claude API calls + H1B lookups
+│   └── service-worker.js       # OpenAI API calls
 ├── content/
-│   ├── linkedin-scraper.js        # Page scraping + overlay injection
-│   └── overlay.css                # Overlay styles
+│   ├── linkedin-scraper.js     # Page scraping + overlay logic
+│   └── overlay.css             # Overlay styles
 └── popup/
-    ├── popup.html                 # Settings UI
-    └── popup.js                   # API key save/load
+    ├── popup.html              # Settings UI
+    └── popup.js                # API key save/load
 ```
 
 ## Cost
 
-Uses Claude Haiku (fastest, cheapest model). Each job analysis costs roughly **$0.0003–0.0006** (less than a tenth of a cent).
+Uses GPT-4o-mini. Each job analysis costs roughly **$0.0003–0.0005** — less than a tenth of a cent.

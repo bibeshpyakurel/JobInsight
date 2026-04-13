@@ -14,13 +14,17 @@
   background: transparent;
 }
 
-/* Inner wrapper clips visual content to rounded corners without hiding edge handles */
+/* Inner wrapper clips visual content to rounded corners without hiding edge handles.
+   Flex column lets the body grow/shrink naturally while the header stays fixed.
+   max-height = viewport - top offset (72px) - bottom breathing room (18px) */
 .ji-inner {
   border-radius: 14px;
   overflow: hidden;
   background: #fff;
   width: 100%;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 90px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
@@ -76,32 +80,12 @@
 .ji-status--error   { color: #ff6b6b; }
 .ji-status--warn    { color: #ffd166; }
 
-.ji-btn-minimize {
-  background: rgba(255, 255, 255, 0.18);
-  border: none;
-  color: #fff;
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 0 2px;
-  flex-shrink: 0;
-  transition: background 0.15s;
-}
-
-.ji-btn-minimize:hover {
-  background: rgba(255, 255, 255, 0.32);
-}
 
 /* ── Body ────────────────────────────────────────────────────────────────────── */
 
 .ji-body {
-  max-height: 72vh;
+  flex: 1 1 auto;  /* grow to fill, shrink when content is small */
+  min-height: 0;   /* required for overflow to work inside a flex child */
   overflow-y: auto;
   padding: 12px 14px;
   scrollbar-width: thin;
@@ -213,36 +197,11 @@
 
 .ji-badge--green { background: #d4f5e9; color: #0a7d4b; }
 .ji-badge--red   { background: #fee2e2; color: #b91c1c; }
+.ji-badge--gray  { background: #eef0f3; color: #6b7280; }
 
 .ji-value--small { font-size: 11px; }
 
-/* ── H1B Section Header ──────────────────────────────────────────────────────── */
-
-.ji-h1b-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.ji-h1b-company {
-  font-size: 12px;
-  font-weight: 600;
-  color: #2d3748;
-  margin-top: 2px;
-}
-
-.ji-h1b-checking {
-  font-size: 11px;
-  color: #a0a8b4;
-  font-style: italic;
-}
-
-/* ── H1B Accordion ───────────────────────────────────────────────────────────── */
-
-.ji-summary-trigger {
-  margin-top: 0;
-}
+/* ── Accordion ───────────────────────────────────────────────────────────────── */
 
 .ji-accordion-trigger {
   display: flex;
@@ -273,45 +232,8 @@
   margin-top: 8px;
 }
 
-.ji-h1b-msg {
-  font-size: 12px;
-  color: #a0a8b4;
-  text-align: center;
-  padding: 10px 0;
-  font-style: italic;
-}
-
-.ji-h1b-total {
-  font-size: 11px;
-  color: #718096;
-  margin-bottom: 6px;
-}
-
-.ji-h1b-table {
-  border: 1px solid #e8ecf2;
-  border-radius: 7px;
-  overflow: hidden;
-  font-size: 12px;
-}
-
-.ji-h1b-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 5px 10px;
-}
-
-.ji-h1b-row:nth-child(even) { background: #fafbfc; }
-
-.ji-h1b-head {
-  background: #f0f2f5 !important;
-  font-weight: 700;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: #a0a8b4;
-}
-
 /* ── Summary ─────────────────────────────────────────────────────────────────── */
+
 
 .ji-summary {
   font-size: 12px;
