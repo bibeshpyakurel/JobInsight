@@ -10,6 +10,9 @@
     '.jobs-description-content__text',
     '.jobs-description__content',
     '.jobs-box__html-content',
+    '.jobs-search__job-details--container [class*="description"]',
+    '.jobs-search__job-details--container [class*="jobs-box"]',
+    '.scaffold-layout__detail [class*="description"]',
     '[class*="jobs-description-content"]',
     '.job-view-layout .jobs-description'
   ];
@@ -122,6 +125,10 @@
       } else if (attempts >= MAX) {
         clearInterval(poll);
         contentWatcher = null;
+        currentJobId = null;
+        showOverlay('error', {
+          message: 'Job details took too long to load. Refresh the page or click the job again.'
+        });
       }
     }, 150);
 
@@ -140,6 +147,21 @@
       const el = document.querySelector(sel);
       if (el?.textContent?.trim().length > 100) return el;
     }
+
+    // LinkedIn changes class names often. Fall back to scanning likely detail-pane
+    // containers for long-form text that looks like a job description.
+    const fallbackCandidates = document.querySelectorAll(
+      '.jobs-search__job-details--container div, .jobs-search__job-details--container section, .scaffold-layout__detail div, .scaffold-layout__detail section'
+    );
+
+    for (const el of fallbackCandidates) {
+      const text = el?.textContent?.trim();
+      if (!text || text.length < 400) continue;
+      if (/responsibilities|qualifications|requirements|about the job|about the role|what you'll do|what you will do/i.test(text)) {
+        return el;
+      }
+    }
+
     return null;
   }
 
@@ -265,16 +287,28 @@
 
   // ─── Analysis Flow ──────────────────────────────────────────────────────────
 
-  async function tryAnalyze(jobId, early = {}) {
+  async function tryAnalyze(jobId, early = {}, attempt = 0) {
     if (jobId !== getJobId()) return; // user navigated away before description loaded
     if (jobId === currentJobId) return; // already running
-    currentJobId = jobId;
 
     const jobData = extractJobData();
-    if (!jobData) return;
+    if (!jobData) {
+      if (attempt < 10) {
+        setTimeout(() => {
+          if (jobId === getJobId()) tryAnalyze(jobId, early, attempt + 1);
+        }, 300);
+      } else {
+        showOverlay('error', {
+          message: 'Could not read this job description. Refresh the page or open the job again.'
+        });
+      }
+      return;
+    }
 
     const { userEmail } = await chrome.storage.local.get('userEmail');
     if (!userEmail) { showOverlay('no-api-key'); return; }
+
+    currentJobId = jobId;
 
     const company = jobData.company || early.company || '';
     const title   = jobData.title   || early.title   || '';
