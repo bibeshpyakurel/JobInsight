@@ -3,14 +3,15 @@
   "name": "JobInsight",
   "version": "1.0.0",
   "description": "AI-powered LinkedIn job analyzer: experience, H1B history, sponsorship, clearance, and more.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvFZoZ9jjhOLjUU7mu3w8eFVL4i8gPcyFH4ygxpXSG1RdAG8EYLWVCBfs0stsJSbvLIbC9KiL0WYmslqpbRMQ/F2NI1Xhf/F+Klwuc4oQ8sbtjPQDpiX9vD6dGDMqYMAvpjltv55pmc4K6ciBnjCAfUav3TNjOyJR5E7gP7uN6groP5uFPDNhiZ6VtsRFiW34FKgNVh3oFd7Ni7svVmonYNBYYW5jaGNQKF2Hpo133uoBcl8aKXp7yasEEpoWXjYBEHL43K8h1ie9M1d/3xc8SlI3NF8B3Um2lkLO/OIRc+JtH4P99oA76JjKig6rSn9w6jbe3Vuz9F72ntJ2FBd7XQIDAQAB",
   "permissions": ["storage", "scripting", "identity"],
   "host_permissions": [
     "https://www.linkedin.com/*",
-    "https://api.openai.com/*",
-    "https://www.googleapis.com/*"
+    "https://www.googleapis.com/*",
+    "http://localhost:3000/*"
   ],
   "oauth2": {
-    "client_id": "YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com",
+    "client_id": "958968017622-fh9cn92tsf5vm06i0s4aoq296pom57vh.apps.googleusercontent.com",
     "scopes": ["profile", "email"]
   },
   "background": {
@@ -26,6 +27,16 @@
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "JobInsight Settings"
+    "default_title": "JobInsight Settings",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }

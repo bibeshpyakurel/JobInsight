@@ -1,6 +1,6 @@
 // JobInsight Popup — Google OAuth & User Management
 
-const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID_HERE.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '958968017622-fh9cn92tsf5vm06i0s4aoq296pom57vh.apps.googleusercontent.com';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const signInBtn = document.getElementById('signInBtn');
@@ -17,50 +17,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     showSignedInState(userEmail);
   }
 
-  // Sign in with Google
+  // Sign in with Google using Chrome's built-in identity API
   signInBtn.addEventListener('click', async () => {
     try {
       signInBtn.disabled = true;
       signInBtn.textContent = 'Signing in...';
 
-      // Simple Google OAuth flow
-      const redirectUrl = await new Promise((resolve, reject) => {
-        chrome.identity.launchWebAuthFlow(
-          {
-            url: `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&response_type=token&scope=profile%20email&redirect_uri=https://${chrome.runtime.id}.chromiumapp.org/`,
-            interactive: true
-          },
-          (url) => {
-            if (chrome.runtime.lastError) {
-              reject(chrome.runtime.lastError);
-            } else {
-              resolve(url);
-            }
+      // Get OAuth token via Chrome identity API (works with Chrome Extension OAuth client)
+      const token = await new Promise((resolve, reject) => {
+        chrome.identity.getAuthToken({ interactive: true }, (token) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(token);
           }
-        );
+        });
       });
 
-      if (!redirectUrl) {
+      if (!token) {
         showError('Sign-in cancelled');
         signInBtn.disabled = false;
         signInBtn.textContent = 'Continue with Google';
         return;
       }
 
-      // Extract token from redirect URL
-      const tokenMatch = redirectUrl.match(/access_token=([^&]+)/);
-      if (!tokenMatch) {
-        showError('Failed to get access token');
-        signInBtn.disabled = false;
-        signInBtn.textContent = 'Continue with Google';
-        return;
-      }
-
-      const accessToken = tokenMatch[1];
-
       // Fetch user info from Google
       const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (!userResponse.ok) throw new Error('Failed to fetch user info');

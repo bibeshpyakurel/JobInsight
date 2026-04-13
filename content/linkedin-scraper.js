@@ -273,8 +273,8 @@
     const jobData = extractJobData();
     if (!jobData) return;
 
-    const { openaiApiKey } = await chrome.storage.local.get('openaiApiKey');
-    if (!openaiApiKey) { showOverlay('no-api-key'); return; }
+    const { userEmail } = await chrome.storage.local.get('userEmail');
+    if (!userEmail) { showOverlay('no-api-key'); return; }
 
     const company = jobData.company || early.company || '';
     const title   = jobData.title   || early.title   || '';
@@ -284,7 +284,7 @@
     const trimmedDescription = jobData.description.slice(0, 4000);
 
     chrome.runtime.sendMessage(
-      { type: 'ANALYZE_JOB', data: { jobDescription: trimmedDescription, apiKey: openaiApiKey } },
+      { type: 'ANALYZE_JOB', data: { jobDescription: trimmedDescription, userEmail } },
       (result) => {
         if (chrome.runtime.lastError) { showOverlay('error', { message: chrome.runtime.lastError.message }); return; }
         if (result?.error)            { showOverlay('error', { message: result.error }); return; }
@@ -332,11 +332,11 @@
         break;
 
       case 'no-api-key':
-        statusEl.textContent = 'Setup needed';
+        statusEl.textContent = 'Sign in needed';
         statusEl.className = 'ji-status ji-status--warn';
         body.innerHTML = `
           <div class="ji-message">
-            Add your Claude API key via the<br>
+            Sign in with Google via the<br>
             <strong>JobInsight extension icon</strong> in the toolbar.
           </div>`;
         break;

@@ -11,3 +11,7 @@ Thumbs.db
 # Secrets — create this file locally if needed
 .env
 secrets.json
+
+# Backend
+backend/node_modules/
+backend/.env

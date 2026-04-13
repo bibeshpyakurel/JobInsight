@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: jobinsight-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PORT
+        value: 3000
