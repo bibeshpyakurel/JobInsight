@@ -37,7 +37,12 @@ async function analyzeJob({ jobDescription, userEmail }) {
     clearTimeout(timer);
   }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`Server returned an unexpected response (status ${response.status}). It may still be waking up — please try again.`);
+  }
 
   if (!response.ok) {
     throw new Error(data.error || `Server error ${response.status}`);

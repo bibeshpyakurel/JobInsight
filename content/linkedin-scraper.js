@@ -36,7 +36,7 @@
   function persistJob(jobId, aiResult) {
     // Fire-and-forget — never block the UI on a storage write
     chrome.storage.local.set({ [`ji_job:${jobId}`]: { aiResult, ts: Date.now() } })
-      .catch(() => {});
+      .catch(err => console.warn('[JobInsight] Cache write failed:', err));
   }
 
   let currentJobId   = null;
@@ -59,8 +59,13 @@
     }, 80);
   }
 
-  // 1. MutationObserver — catches DOM-driven navigation (most LinkedIn transitions)
-  const navObserver = new MutationObserver(checkNavChange);
+  // 1. MutationObserver — catches DOM-driven navigation (most LinkedIn transitions).
+  //    Filter to navigation-relevant containers to avoid firing on every ad/notification mutation.
+  const navObserver = new MutationObserver((mutations) => {
+    if (mutations.some(m => m.target.closest?.(
+      '.jobs-search-results-list, .scaffold-layout__detail, .jobs-search__job-details--container'
+    ))) checkNavChange();
+  });
   navObserver.observe(document.body, { childList: true, subtree: true });
 
   // 2. Intercept history.pushState / replaceState — LinkedIn SPA uses these heavily.
@@ -90,9 +95,10 @@
     if (analysisCache.has(jobId)) {
       currentJobId = jobId;
       const aiResult = analysisCache.get(jobId);
-      showOverlay('results', aiResult);
+      showOverlay('results', { ...aiResult, fromCache: true });
       setupSummaryAccordion();
       setupHighlightToggle(aiResult);
+      setupRefreshButton(jobId);
       return;
     }
 
@@ -104,9 +110,10 @@
     if (persistedAI) {
       currentJobId = jobId;
       analysisCache.set(jobId, persistedAI);
-      showOverlay('results', persistedAI);
+      showOverlay('results', { ...persistedAI, fromCache: true });
       setupSummaryAccordion();
       setupHighlightToggle(persistedAI);
+      setupRefreshButton(jobId);
       return;
     }
 
@@ -445,11 +452,9 @@
         break;
 
       case 'results':
-        statusEl.textContent = 'Done';
-        statusEl.className = 'ji-status ji-status--done';
+        statusEl.textContent = data.fromCache ? 'Cached' : 'Done';
+        statusEl.className = `ji-status ${data.fromCache ? 'ji-status--cached' : 'ji-status--done'}`;
         body.innerHTML = renderResults(data);
-        // Note: setupH1BAccordion / setupSummaryAccordion / setupHighlightToggle
-        // are called by tryAnalyze so it can pass the live h1bData closure.
         break;
     }
   }
@@ -534,6 +539,11 @@
           </div>
         </div>
 
+        ${d.fromCache ? `
+        <div class="ji-section ji-section--highlight">
+          <button class="ji-btn-highlight" id="ji-refresh-btn">↻ Refresh Analysis</button>
+        </div>` : ''}
+
       </div>`;
   }
 
@@ -563,6 +573,17 @@
       const open = bodyEl.style.display === 'block';
       bodyEl.style.display = open ? 'none' : 'block';
       trigger.querySelector('.ji-chevron').textContent = open ? '▼' : '▲';
+    });
+  }
+
+  function setupRefreshButton(jobId) {
+    overlayEl?.querySelector('#ji-refresh-btn')?.addEventListener('click', () => {
+      const id = jobId || getJobId();
+      if (!id) return;
+      analysisCache.delete(id);
+      chrome.storage.local.remove(`ji_job:${id}`);
+      currentJobId = null;
+      onJobChange(id);
     });
   }
 
@@ -741,13 +762,14 @@
       testRegex.lastIndex = 0;
     }
 
+    const applyRe = new RegExp(boundedPatterns.join('|'), 'gi');
     toReplace.forEach(textNode => {
-      const text    = textNode.textContent;
-      const localRe = new RegExp(boundedPatterns.join('|'), 'gi');
+      const text     = textNode.textContent;
+      applyRe.lastIndex = 0;
       const fragment = document.createDocumentFragment();
       let last = 0, m;
 
-      while ((m = localRe.exec(text)) !== null) {
+      while ((m = applyRe.exec(text)) !== null) {
         if (m.index > last) fragment.appendChild(document.createTextNode(text.slice(last, m.index)));
 
         const span = document.createElement('span');

@@ -5,11 +5,14 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Only allow requests from your Chrome extension
+// Only allow requests from your specific Chrome extension
+const ALLOWED_ORIGIN = process.env.EXTENSION_ID
+  ? `chrome-extension://${process.env.EXTENSION_ID}`
+  : null;
+
 app.use(cors({
   origin: (origin, cb) => {
-    // Chrome extensions send origin as chrome-extension://<id>
-    if (!origin || origin.startsWith('chrome-extension://')) {
+    if (ALLOWED_ORIGIN && origin === ALLOWED_ORIGIN) {
       cb(null, true);
     } else {
       cb(new Error('Not allowed'));
@@ -23,11 +26,18 @@ app.use(express.json({ limit: '16kb' }));
 const rateMap = new Map();
 const RATE_LIMIT = 60;        // requests per window
 const RATE_WINDOW = 60 * 1000; // 1 minute
+const RATE_MAP_MAX = 10_000;   // cap entries to prevent unbounded growth
 
 function checkRate(email) {
   const now = Date.now();
   const entry = rateMap.get(email);
   if (!entry || now - entry.windowStart > RATE_WINDOW) {
+    // Evict all expired entries before adding a new one when at capacity
+    if (!entry && rateMap.size >= RATE_MAP_MAX) {
+      for (const [key, val] of rateMap) {
+        if (now - val.windowStart > RATE_WINDOW) rateMap.delete(key);
+      }
+    }
     rateMap.set(email, { windowStart: now, count: 1 });
     return true;
   }
@@ -108,12 +118,21 @@ ${jobDescription.slice(0, 4000)}`;
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // Extract the outermost {...} by finding the first { and last }
+    const start = text.indexOf('{');
+    const end   = text.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) {
       return res.status(502).json({ error: 'Could not parse response from AI.' });
     }
 
-    res.json(JSON.parse(jsonMatch[0]));
+    let parsed;
+    try {
+      parsed = JSON.parse(text.slice(start, end + 1));
+    } catch {
+      return res.status(502).json({ error: 'AI returned malformed JSON.' });
+    }
+
+    res.json(parsed);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Server error' });
   }

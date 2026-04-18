@@ -1,8 +1,34 @@
 // JobInsight Popup — Google OAuth & User Management
 
 const GOOGLE_CLIENT_ID = '958968017622-fh9cn92tsf5vm06i0s4aoq296pom57vh.apps.googleusercontent.com';
+const BACKEND_URL = 'https://jobinsight-6nyq.onrender.com';
+
+async function checkBackendHealth() {
+  const row  = document.getElementById('backendStatus');
+  const text = document.getElementById('backendStatusText');
+  if (!row || !text) return;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`${BACKEND_URL}/api/health`, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      row.className  = 'ji-backend-row ji-backend-row--ok';
+      text.textContent = 'Backend online';
+    } else {
+      row.className  = 'ji-backend-row ji-backend-row--warn';
+      text.textContent = `Backend error (${res.status})`;
+    }
+  } catch {
+    row.className  = 'ji-backend-row ji-backend-row--warn';
+    text.textContent = 'Backend offline — may be starting up';
+  }
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
+  checkBackendHealth();
   const signInBtn = document.getElementById('signInBtn');
   const signOutBtn = document.getElementById('signOutBtn');
   const errorMsg = document.getElementById('errorMsg');

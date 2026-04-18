@@ -146,6 +146,26 @@
 
     .ji-signout-btn:hover { color: #718096; }
 
+    /* ── Backend status ── */
+    .ji-backend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      border: 1px solid transparent;
+    }
+
+    .ji-backend-row--checking { background: #f8fafc; border-color: #e2e8f0; color: #94a3b8; }
+    .ji-backend-row--ok       { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+    .ji-backend-row--warn     { background: #fffbeb; border-color: #fde68a; color: #92610a; }
+
+    .ji-backend-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .ji-backend-row--checking .ji-backend-dot { background: #94a3b8; }
+    .ji-backend-row--ok       .ji-backend-dot { background: #16a34a; }
+    .ji-backend-row--warn     .ji-backend-dot { background: #f59e0b; }
+
     /* ── Footer ── */
     .ji-footer {
       border-top: 1px solid #f0f2f5;
@@ -191,6 +211,11 @@
       <button class="ji-signout-btn" id="signOutBtn">Sign out</button>
     </div>
 
+  </div>
+
+  <div id="backendStatus" class="ji-backend-row ji-backend-row--checking" style="margin: 0 20px 12px;">
+    <div class="ji-backend-dot"></div>
+    <span id="backendStatusText">Checking backend…</span>
   </div>
 
   <div class="ji-footer">Made with ❤️ by Bibesh</div>

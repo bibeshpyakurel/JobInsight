@@ -77,6 +77,7 @@
 
 .ji-status--loading { color: #ffd166; }
 .ji-status--done    { color: #06d6a0; }
+.ji-status--cached  { color: #94a3b8; }
 .ji-status--error   { color: #ff6b6b; }
 .ji-status--warn    { color: #ffd166; }
 
