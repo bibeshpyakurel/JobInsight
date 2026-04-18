@@ -10,15 +10,21 @@ const ALLOWED_ORIGIN = process.env.EXTENSION_ID
   ? `chrome-extension://${process.env.EXTENSION_ID}`
   : null;
 
-app.use(cors({
-  origin: (origin, cb) => {
-    if (ALLOWED_ORIGIN && origin === ALLOWED_ORIGIN) {
-      cb(null, true);
-    } else {
-      cb(new Error('Not allowed'));
-    }
+const publicCors = cors({ origin: true });
+const analyzeCors = cors({ origin: true });
+
+function requireAllowedExtensionOrigin(req, res, next) {
+  if (!ALLOWED_ORIGIN) {
+    return res.status(500).json({ error: 'Server misconfigured — missing EXTENSION_ID' });
   }
-}));
+
+  const origin = req.get('Origin');
+  if (origin !== ALLOWED_ORIGIN) {
+    return res.status(403).json({ error: 'Not allowed' });
+  }
+
+  next();
+}
 
 app.use(express.json({ limit: '16kb' }));
 
@@ -109,7 +115,9 @@ function normalizeAnalysis(parsed) {
 
 // ─── Analyze endpoint ─────────────────────────────────────────────────────────
 
-app.post('/api/analyze', async (req, res) => {
+app.options('/api/analyze', analyzeCors);
+
+app.post('/api/analyze', analyzeCors, requireAllowedExtensionOrigin, async (req, res) => {
   const { jobDescription, userEmail } = req.body;
 
   if (!jobDescription || typeof jobDescription !== 'string') {
@@ -209,7 +217,7 @@ ${jobDescription.slice(0, 4000)}`;
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 
-app.get('/', (_req, res) => {
+app.get('/', publicCors, (_req, res) => {
   res.json({
     name: 'JobInsight API',
     status: 'ok',
@@ -217,7 +225,7 @@ app.get('/', (_req, res) => {
   });
 });
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', publicCors, (_req, res) => {
   res.json({ status: 'ok' });
 });
 
