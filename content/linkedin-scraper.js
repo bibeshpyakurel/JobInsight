@@ -129,12 +129,17 @@
   }
 
   function watchForContent(jobId, early) {
-    // Poll every 150ms instead of a MutationObserver on the whole body.
-    // Cheaper on CPU, still fast enough to feel instant (avg wait < 300ms).
     let attempts = 0;
     const MAX    = 53; // ~8 seconds total
 
     const poll = setInterval(() => {
+      // User navigated away — discard silently
+      if (jobId !== getJobId()) {
+        clearInterval(poll);
+        contentWatcher = null;
+        return;
+      }
+
       attempts++;
       if (getDescriptionElement()) {
         clearInterval(poll);
@@ -150,7 +155,6 @@
       }
     }, 150);
 
-    // Store so onJobChange can cancel a stale watcher on fast navigation
     contentWatcher = { disconnect: () => clearInterval(poll) };
   }
 
@@ -197,6 +201,49 @@
     // and search pages even when no specific job is selected, which would
     // cause false triggers and a stuck loading overlay.
     return /linkedin\.com\/jobs\//.test(location.href) && Boolean(getJobId());
+  }
+
+  // ─── Expand collapsed descriptions ─────────────────────────────────────────
+
+  const EXPAND_SELECTORS = [
+    '.jobs-description__footer-button',
+    'button[aria-label*="see more" i]',
+    'button[aria-label*="show more" i]',
+    '.jobs-description__see-more-button',
+    '[data-tracking-control-name*="see_more"]',
+  ];
+
+  async function expandDescription() {
+    for (const sel of EXPAND_SELECTORS) {
+      const btn = document.querySelector(sel);
+      if (!btn || btn.offsetParent === null) continue;
+
+      // Skip "Show less" / "See less" — button is already expanded
+      const label = (btn.textContent + (btn.getAttribute('aria-label') || '')).toLowerCase();
+      if (/less|collapse|hide/i.test(label)) continue;
+
+      btn.click();
+      await waitForDescriptionExpand();
+      return;
+    }
+  }
+
+  function waitForDescriptionExpand() {
+    return new Promise(resolve => {
+      const descEl = getDescriptionElement();
+      if (!descEl) return resolve();
+
+      let settled;
+      const mo = new MutationObserver(() => {
+        clearTimeout(settled);
+        // Resolve 200ms after mutations stop — content has stabilised
+        settled = setTimeout(() => { mo.disconnect(); resolve(); }, 200);
+      });
+
+      mo.observe(descEl, { childList: true, subtree: true, characterData: true });
+      // Hard cap — if nothing mutates within 1.5s, proceed anyway (CSS-only expand)
+      setTimeout(() => { mo.disconnect(); resolve(); }, 1500);
+    });
   }
 
   // ─── Job Data Extraction ────────────────────────────────────────────────────
@@ -279,6 +326,19 @@
     return '';
   }
 
+  function getDescriptionJobId() {
+    // Only inspect the detail pane — never the job list cards, which carry the
+    // previously-selected job's ID and would cause a false "stale" mismatch.
+    const detailPane = document.querySelector(
+      '.jobs-search__job-details--container, .scaffold-layout__detail'
+    );
+    if (!detailPane) return null;
+    const el = detailPane.querySelector('[data-job-id], [data-occludable-job-id]');
+    return extractJobIdFromValue(
+      el?.getAttribute('data-job-id') || el?.getAttribute('data-occludable-job-id')
+    );
+  }
+
   function extractJobData() {
     const descEl = getDescriptionElement();
 
@@ -286,6 +346,11 @@
 
     const description = descEl.textContent.trim();
     if (description.length < 100) return null;
+
+    // Only reject if we're confident the detail pane shows a different job.
+    // If getDescriptionJobId() returns null (attribute not found), proceed normally.
+    const visibleJobId = getDescriptionJobId();
+    if (visibleJobId && visibleJobId !== getJobId()) return null;
 
     const company = resolveCompanyName(description) || 'Unknown Company';
 
@@ -353,6 +418,9 @@
     if (jobId !== getJobId()) return; // user navigated away before description loaded
     if (jobId === currentJobId) return; // already running
 
+    // On first attempt, auto-click any "See more" button so we get the full description
+    if (attempt === 0) await expandDescription();
+
     const jobData = extractJobData();
     if (!jobData) {
       if (attempt < 10) {
@@ -361,7 +429,7 @@
         }, 300);
       } else {
         showOverlay('error', {
-          message: 'Could not read this job description. Refresh the page or open the job again.'
+          message: 'Could not read this job description. Try clicking "See more" manually, then click Retry.'
         });
       }
       return;
