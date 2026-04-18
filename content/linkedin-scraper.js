@@ -94,7 +94,8 @@
     // ── L1: In-memory cache — instant, no I/O ────────────────────────────────
     if (analysisCache.has(jobId)) {
       currentJobId = jobId;
-      const aiResult = analysisCache.get(jobId);
+      const aiResult = enforceEvidenceBackedRequirements(analysisCache.get(jobId));
+      analysisCache.set(jobId, aiResult);
       showOverlay('results', { ...aiResult, fromCache: true });
       setupSummaryAccordion();
       setupHighlightToggle(aiResult);
@@ -109,10 +110,11 @@
 
     if (persistedAI) {
       currentJobId = jobId;
-      analysisCache.set(jobId, persistedAI);
-      showOverlay('results', { ...persistedAI, fromCache: true });
+      const aiResult = enforceEvidenceBackedRequirements(persistedAI);
+      analysisCache.set(jobId, aiResult);
+      showOverlay('results', { ...aiResult, fromCache: true });
       setupSummaryAccordion();
-      setupHighlightToggle(persistedAI);
+      setupHighlightToggle(aiResult);
       setupRefreshButton(jobId);
       return;
     }
@@ -453,7 +455,7 @@
         if (chrome.runtime.lastError) { showOverlay('error', { message: chrome.runtime.lastError.message }); return; }
         if (result?.error)            { showOverlay('error', { message: result.error }); return; }
 
-        const aiResult = { ...result, company, title };
+        const aiResult = enforceEvidenceBackedRequirements({ ...result, company, title });
 
         // L1: in-memory cache
         analysisCache.set(jobId, aiResult);
@@ -462,7 +464,7 @@
 
         showOverlay('results', aiResult);
         setupSummaryAccordion();
-        setupHighlightToggle(result);
+        setupHighlightToggle(aiResult);
       }
     );
   }
@@ -563,6 +565,200 @@
           <span class="ji-loading-bar"><span class="ji-pulse"></span></span>
         </div>`).join('')}
     </div>`;
+  }
+
+  const SPONSORSHIP_PATTERNS = {
+    Sponsors: [
+      /\bvisa sponsorship\b/i,
+      /\bvisa sponsor(?:ship)?\b/i,
+      /\bwork visa\b/i,
+      /\bwork authorization\b/i,
+      /\b(?:we|company)\s+(?:can|will|may)?\s*sponsor\b/i,
+      /\bable to sponsor\b/i,
+      /\bsponsorship (?:available|provided)\b/i,
+      /\bH-?1B\b/i
+    ],
+    'Does Not Sponsor': [
+      /\bunable to sponsor\b/i,
+      /\bnot able to sponsor\b/i,
+      /\bwill not sponsor\b/i,
+      /\bcannot sponsor\b/i,
+      /\b(?:does|do) not sponsor\b/i,
+      /\bno visa sponsorship\b/i,
+      /\bsponsorship (?:is )?not available\b/i,
+      /\bnot provide sponsorship\b/i,
+      /\bauthorized to work\b/i,
+      /\bmust be authorized\b/i,
+      /\bauthorization to work\b/i
+    ]
+  };
+
+  const CITIZENSHIP_PATTERNS = [
+    /\bU\.?S\.? citizen\b/i,
+    /\bUnited States citizen\b/i,
+    /\bmust be a U\.?S\.? citizen\b/i,
+    /\bcitizenship (?:is )?required\b/i,
+    /\bsecurity clearance\b/i,
+    /\bactive clearance\b/i,
+    /\bactive secret\b/i,
+    /\bTop Secret\b/i,
+    /\bTS\/SCI\b/i,
+    /\bSecret clearance\b/i,
+    /\bgovernment clearance\b/i
+  ];
+
+  function normalizeText(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeEvidenceSnippet(text) {
+    return normalizeText(String(text || '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'"));
+  }
+
+  function getEvidenceContainer(el, root) {
+    let current = el;
+
+    while (current && current !== root) {
+      const tag = current.tagName;
+      const text = normalizeText(current.innerText || current.textContent);
+
+      if (tag === 'LI' || tag === 'P') return current;
+      if ((tag === 'DIV' || tag === 'SECTION') && text && text.length <= 320) return current;
+
+      current = current.parentElement;
+    }
+
+    return null;
+  }
+
+  function findSnippetContainer(root, snippet) {
+    const target = normalizeEvidenceSnippet(snippet);
+    if (!root || !target) return null;
+
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(node) {
+          const tag = node.tagName;
+          if (tag === 'LI' || tag === 'P' || tag === 'DIV' || tag === 'SECTION') {
+            return NodeFilter.FILTER_ACCEPT;
+          }
+          return NodeFilter.FILTER_SKIP;
+        }
+      }
+    );
+
+    let best = null;
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = normalizeEvidenceSnippet(node.innerText || node.textContent);
+      if (!text || !text.includes(target)) continue;
+      if (!best || text.length < best.text.length) {
+        best = { element: node, text };
+      }
+    }
+
+    if (best) {
+      return {
+        element: best.element
+      };
+    }
+
+    return null;
+  }
+
+  function findEvidenceMatch(root, patterns) {
+    if (!root || !patterns?.length) return null;
+
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          const tag = parent?.tagName;
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
+          return normalizeText(node.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      }
+    );
+
+    let node;
+    while ((node = walker.nextNode())) {
+      const nodeText = normalizeText(node.textContent);
+      if (!nodeText) continue;
+
+      for (const pattern of patterns) {
+        if (!pattern.test(nodeText)) continue;
+
+        const container = getEvidenceContainer(node.parentElement, root);
+        return {
+          element: container
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function getRequirementEvidence(data) {
+    const descEl = getDescriptionElement();
+    const sponsorshipStatus = data?.sponsorship || 'Not Mentioned';
+    const citizenshipStatus = data?.usCitizenshipRequired || 'Not Mentioned';
+
+    const sponsorshipSnippet = normalizeEvidenceSnippet(data?.sponsorshipEvidence);
+    const citizenshipSnippet = normalizeEvidenceSnippet(data?.usCitizenshipEvidence);
+
+    const sponsorshipFromBackend = sponsorshipSnippet
+      ? findSnippetContainer(descEl, sponsorshipSnippet)
+      : null;
+    const citizenshipFromBackend = citizenshipSnippet
+      ? findSnippetContainer(descEl, citizenshipSnippet)
+      : null;
+
+    const sponsorshipMatch = sponsorshipFromBackend
+      || findEvidenceMatch(descEl, SPONSORSHIP_PATTERNS[sponsorshipStatus] || []);
+    const citizenshipMatch = citizenshipStatus === 'Required'
+      ? (citizenshipFromBackend || findEvidenceMatch(descEl, CITIZENSHIP_PATTERNS))
+      : null;
+
+    const sponsorship = sponsorshipStatus === 'Not Mentioned'
+      ? {
+          status: sponsorshipStatus,
+          element: null
+        }
+      : {
+          status: sponsorshipStatus,
+          element: sponsorshipMatch?.element || null
+        };
+
+    const citizenship = citizenshipStatus === 'Required'
+      ? {
+          status: citizenshipStatus,
+          element: citizenshipMatch?.element || null
+        }
+      : null;
+
+    return { sponsorship, citizenship };
+  }
+
+  function enforceEvidenceBackedRequirements(data) {
+    if (!data) return data;
+    if (!getDescriptionElement()) return data;
+
+    const evidence = getRequirementEvidence(data);
+    const hasSponsorshipEvidence = Boolean(evidence.sponsorship?.element);
+    const hasCitizenshipEvidence = Boolean(evidence.citizenship?.element);
+
+    return {
+      ...data,
+      sponsorship: hasSponsorshipEvidence ? data.sponsorship : 'Not Mentioned',
+      sponsorshipEvidence: hasSponsorshipEvidence ? (data.sponsorshipEvidence || '') : '',
+      usCitizenshipRequired: hasCitizenshipEvidence ? data.usCitizenshipRequired : 'Not Mentioned',
+      usCitizenshipEvidence: hasCitizenshipEvidence ? (data.usCitizenshipEvidence || '') : ''
+    };
   }
 
   function renderResults(d) {
@@ -743,51 +939,6 @@
       }
     }
 
-    // ── Sponsorship (amber) ───────────────────────────────────────────────────
-    if (data.sponsorship === 'Sponsors') {
-      add("visa sponsorship",         'ji-hl ji-hl--sponsor');
-      add("visa sponsor",             'ji-hl ji-hl--sponsor');
-      add("work visa",                'ji-hl ji-hl--sponsor');
-      add("work authorization",       'ji-hl ji-hl--sponsor');
-      add("we will sponsor",          'ji-hl ji-hl--sponsor');
-      add("able to sponsor",          'ji-hl ji-hl--sponsor');
-      add("sponsorship available",    'ji-hl ji-hl--sponsor');
-      add("sponsorship provided",     'ji-hl ji-hl--sponsor');
-      add("H-1B",                     'ji-hl ji-hl--sponsor');
-      add("H1B",                      'ji-hl ji-hl--sponsor');
-    } else if (data.sponsorship === 'Does Not Sponsor') {
-      add("unable to sponsor",                'ji-hl ji-hl--sponsor');
-      add("not able to sponsor",              'ji-hl ji-hl--sponsor');
-      add("will not sponsor",                 'ji-hl ji-hl--sponsor');
-      add("cannot sponsor",                   'ji-hl ji-hl--sponsor');
-      add("does not sponsor",                 'ji-hl ji-hl--sponsor');
-      add("do not sponsor",                   'ji-hl ji-hl--sponsor');
-      add("no visa sponsorship",              'ji-hl ji-hl--sponsor');
-      add("sponsorship is not available",     'ji-hl ji-hl--sponsor');
-      add("sponsorship not available",        'ji-hl ji-hl--sponsor');
-      add("not provide sponsorship",          'ji-hl ji-hl--sponsor');
-      add("authorized to work",               'ji-hl ji-hl--sponsor');
-      add("must be authorized",               'ji-hl ji-hl--sponsor');
-      add("authorization to work",            'ji-hl ji-hl--sponsor');
-    }
-
-    // ── US Citizenship / Clearance (red) ──────────────────────────────────────
-    if (data.usCitizenshipRequired === 'Required') {
-      add("US citizen",              'ji-hl ji-hl--citizen');
-      add("U.S. citizen",            'ji-hl ji-hl--citizen');
-      add("United States citizen",   'ji-hl ji-hl--citizen');
-      add("must be a US citizen",    'ji-hl ji-hl--citizen');
-      add("citizenship required",    'ji-hl ji-hl--citizen');
-      add("citizenship is required", 'ji-hl ji-hl--citizen');
-      add("security clearance",      'ji-hl ji-hl--citizen');
-      add("active clearance",        'ji-hl ji-hl--citizen');
-      add("active secret",           'ji-hl ji-hl--citizen');
-      add("Top Secret",              'ji-hl ji-hl--citizen');
-      add("TS/SCI",                  'ji-hl ji-hl--citizen');
-      add("Secret clearance",        'ji-hl ji-hl--citizen');
-      add("government clearance",    'ji-hl ji-hl--citizen');
-    }
-
     // Longest first so longer phrases shadow shorter sub-phrases
     return entries.sort((a, b) => b.term.length - a.term.length);
   }
@@ -796,63 +947,82 @@
     const descEl = getDescriptionElement();
     if (!descEl) return;
 
+    clearHighlights();
+
     const entries = buildTerms(data);
-    if (!entries.length) return;
+    const evidence = getRequirementEvidence(data);
 
-    // Map lowercased term → CSS class string for O(1) lookup during span creation
-    const classMap = new Map(entries.map(({ term, cls }) => [term.toLowerCase(), cls]));
+    if (!entries.length && !evidence.sponsorship?.element && !evidence.citizenship?.element) return;
 
-    // Per-term word-boundary patterns — prevents "TS" matching inside "tests", etc.
-    const boundedPatterns = entries.map(({ term }) => {
-      const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return `(?<![a-zA-Z0-9_])(?:${esc})(?![a-zA-Z0-9_])`;
-    });
-    const testRegex = new RegExp(`(${boundedPatterns.join('|')})`, 'gi');
+    if (entries.length) {
+      // Map lowercased term → CSS class string for O(1) lookup during span creation
+      const classMap = new Map(entries.map(({ term, cls }) => [term.toLowerCase(), cls]));
 
-    // Walk text nodes only — never touch element nodes directly
-    const walker = document.createTreeWalker(
-      descEl,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const tag = node.parentElement?.tagName;
-          if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
-          if (node.parentElement?.classList?.contains('ji-hl')) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
+      // Per-term word-boundary patterns — prevents "TS" matching inside "tests", etc.
+      const boundedPatterns = entries.map(({ term }) => {
+        const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return `(?<![a-zA-Z0-9_])(?:${esc})(?![a-zA-Z0-9_])`;
+      });
+      const testRegex = new RegExp(`(${boundedPatterns.join('|')})`, 'gi');
+
+      // Walk text nodes only — never touch element nodes directly
+      const walker = document.createTreeWalker(
+        descEl,
+        NodeFilter.SHOW_TEXT,
+        {
+          acceptNode(node) {
+            const tag = node.parentElement?.tagName;
+            if (tag === 'SCRIPT' || tag === 'STYLE') return NodeFilter.FILTER_REJECT;
+            if (node.parentElement?.closest('.ji-hl, .ji-hl-block')) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          }
         }
-      }
-    );
+      );
 
-    const toReplace = [];
-    let node;
-    while ((node = walker.nextNode())) {
-      if (testRegex.test(node.textContent)) toReplace.push(node);
-      testRegex.lastIndex = 0;
+      const toReplace = [];
+      let node;
+      while ((node = walker.nextNode())) {
+        if (testRegex.test(node.textContent)) toReplace.push(node);
+        testRegex.lastIndex = 0;
+      }
+
+      const applyRe = new RegExp(boundedPatterns.join('|'), 'gi');
+      toReplace.forEach(textNode => {
+        const text = textNode.textContent;
+        applyRe.lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let last = 0;
+        let m;
+
+        while ((m = applyRe.exec(text)) !== null) {
+          if (m.index > last) fragment.appendChild(document.createTextNode(text.slice(last, m.index)));
+
+          const span = document.createElement('span');
+          span.className = classMap.get(m[0].toLowerCase()) || 'ji-hl ji-hl--keyword';
+          span.textContent = m[0];
+          fragment.appendChild(span);
+          last = m.index + m[0].length;
+        }
+
+        if (last < text.length) fragment.appendChild(document.createTextNode(text.slice(last)));
+        textNode.parentNode?.replaceChild(fragment, textNode);
+      });
     }
 
-    const applyRe = new RegExp(boundedPatterns.join('|'), 'gi');
-    toReplace.forEach(textNode => {
-      const text     = textNode.textContent;
-      applyRe.lastIndex = 0;
-      const fragment = document.createDocumentFragment();
-      let last = 0, m;
+    if (evidence.sponsorship?.element) {
+      evidence.sponsorship.element.classList.add('ji-hl-block', 'ji-hl-block--sponsor');
+    }
 
-      while ((m = applyRe.exec(text)) !== null) {
-        if (m.index > last) fragment.appendChild(document.createTextNode(text.slice(last, m.index)));
-
-        const span = document.createElement('span');
-        span.className = classMap.get(m[0].toLowerCase()) || 'ji-hl ji-hl--keyword';
-        span.textContent = m[0];
-        fragment.appendChild(span);
-        last = m.index + m[0].length;
-      }
-
-      if (last < text.length) fragment.appendChild(document.createTextNode(text.slice(last)));
-      textNode.parentNode?.replaceChild(fragment, textNode);
-    });
+    if (evidence.citizenship?.element) {
+      evidence.citizenship.element.classList.add('ji-hl-block', 'ji-hl-block--citizen');
+    }
   }
 
   function clearHighlights() {
+    document.querySelectorAll('.ji-hl-block').forEach(el => {
+      el.classList.remove('ji-hl-block', 'ji-hl-block--sponsor', 'ji-hl-block--citizen');
+    });
+
     // Replace each .ji-hl span with its plain text content
     document.querySelectorAll('.ji-hl').forEach(span => {
       span.replaceWith(document.createTextNode(span.textContent));

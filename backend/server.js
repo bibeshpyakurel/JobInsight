@@ -46,6 +46,67 @@ function checkRate(email) {
   return true;
 }
 
+const ALLOWED_SPONSORSHIP = new Set(['Sponsors', 'Does Not Sponsor', 'Not Mentioned']);
+const ALLOWED_CITIZENSHIP = new Set(['Required', 'Not Mentioned']);
+const ALLOWED_EDUCATION = new Set([
+  "Bachelor's Degree Required",
+  "Bachelor's Degree Preferred",
+  "Master's Degree Required",
+  "Master's Degree Preferred",
+  'PhD Required',
+  'PhD Preferred',
+  'Equivalent Experience Accepted',
+  'High School / GED Required',
+  'Degree Not Specified'
+]);
+
+function cleanSentence(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeAnalysis(parsed) {
+  const rawSponsorship = ALLOWED_SPONSORSHIP.has(parsed?.sponsorship)
+    ? parsed.sponsorship
+    : 'Not Mentioned';
+
+  const rawUsCitizenshipRequired = ALLOWED_CITIZENSHIP.has(parsed?.usCitizenshipRequired)
+    ? parsed.usCitizenshipRequired
+    : 'Not Mentioned';
+
+  const education = ALLOWED_EDUCATION.has(parsed?.education)
+    ? parsed.education
+    : 'Degree Not Specified';
+
+  const rawSponsorshipEvidence = rawSponsorship === 'Not Mentioned'
+    ? ''
+    : cleanSentence(parsed?.sponsorshipEvidence);
+
+  const rawUsCitizenshipEvidence = rawUsCitizenshipRequired === 'Required'
+    ? cleanSentence(parsed?.usCitizenshipEvidence)
+    : '';
+
+  const sponsorship = rawSponsorshipEvidence ? rawSponsorship : 'Not Mentioned';
+  const sponsorshipEvidence = rawSponsorshipEvidence ? rawSponsorshipEvidence : '';
+
+  const usCitizenshipRequired = rawUsCitizenshipEvidence ? rawUsCitizenshipRequired : 'Not Mentioned';
+  const usCitizenshipEvidence = rawUsCitizenshipEvidence ? rawUsCitizenshipEvidence : '';
+
+  return {
+    yearsOfExperience: typeof parsed?.yearsOfExperience === 'string'
+      ? parsed.yearsOfExperience.trim() || 'Not specified'
+      : 'Not specified',
+    education,
+    sponsorship,
+    sponsorshipEvidence,
+    usCitizenshipRequired,
+    usCitizenshipEvidence,
+    summary: typeof parsed?.summary === 'string' ? parsed.summary.trim() : '',
+    keywords: Array.isArray(parsed?.keywords)
+      ? parsed.keywords.filter(k => typeof k === 'string').map(k => k.trim()).filter(Boolean).slice(0, 12)
+      : []
+  };
+}
+
 // ─── Analyze endpoint ─────────────────────────────────────────────────────────
 
 app.post('/api/analyze', async (req, res) => {
@@ -75,14 +136,18 @@ Return exactly this structure:
   "yearsOfExperience": "e.g. '3-5 years', '5+ years', or 'Not specified'",
   "education": "one of the exact labels listed below",
   "sponsorship": "Sponsors | Does Not Sponsor | Not Mentioned",
+  "sponsorshipEvidence": "Exact sentence from the job description that supports the sponsorship label, or an empty string if not mentioned",
   "usCitizenshipRequired": "Required | Not Mentioned",
+  "usCitizenshipEvidence": "Exact sentence from the job description that supports the citizenship label, or an empty string if not mentioned",
   "summary": "2-3 sentence overview of the role, team, and company",
   "keywords": ["8 to 12 job-specific technical or domain keywords"]
 }
 
 Rules:
 - sponsorship: "Sponsors" if visa/work sponsorship is explicitly offered or clearly implied; "Does Not Sponsor" if explicitly stated they do not sponsor; "Not Mentioned" if the description is silent on sponsorship.
+- sponsorshipEvidence: if sponsorship is "Sponsors" or "Does Not Sponsor", copy exactly one sentence from the job description that most directly supports that label. Do not paraphrase. If sponsorship is "Not Mentioned", return an empty string.
 - usCitizenshipRequired: "Required" if any security clearance is required OR if US citizenship is explicitly required; "Not Mentioned" otherwise.
+- usCitizenshipEvidence: if usCitizenshipRequired is "Required", copy exactly one sentence from the job description that most directly supports that label. Do not paraphrase. If it is "Not Mentioned", return an empty string.
 - education: return EXACTLY one of these labels — nothing else:
     "Bachelor's Degree Required"
     "Bachelor's Degree Preferred"
@@ -94,6 +159,10 @@ Rules:
     "High School / GED Required"
     "Degree Not Specified"
 - Keywords: specific technical terms (e.g. "Kubernetes", "HIPAA compliance", "React 18") not generic skills.
+- Evidence sentences must be copied verbatim from the provided job description text, preserving meaning and wording.
+- If multiple sentences qualify, choose the single strongest sentence.
+- Never return "Sponsors", "Does Not Sponsor", or "Required" unless you can also return an exact supporting sentence copied from the job description.
+- If you cannot provide an exact supporting sentence for sponsorship or citizenship, set that field to "Not Mentioned" and leave its evidence string empty.
 
 Job Description:
 ${jobDescription.slice(0, 4000)}`;
@@ -132,7 +201,7 @@ ${jobDescription.slice(0, 4000)}`;
       return res.status(502).json({ error: 'AI returned malformed JSON.' });
     }
 
-    res.json(parsed);
+    res.json(normalizeAnalysis(parsed));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Server error' });
   }
