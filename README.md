@@ -5,12 +5,6 @@ A Chrome extension that automatically analyzes LinkedIn job postings and shows a
 ## Preview
 
 <p align="center">
-    <img src="screenshots/BeforeSignIn.png" alt="JobInsight sign-in popup" width="31%" />
-    <img src="screenshots/AfterSignIn.png" alt="JobInsight signed-in popup" width="31%" />
-    <img src="screenshots/Overlay.png" alt="JobInsight overlay on a LinkedIn job post" width="31%" />
-</p>
-
-<p align="center">
     <img src="screenshots/LinkedInFeed.png" alt="JobInsight overlay on the LinkedIn job feed" width="90%" />
 </p>
 
