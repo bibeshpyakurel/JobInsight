@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend proxy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        working-directory: backend
+        run: npm ci
+
+      # These cover the gate in front of the proxy: only the configured
+      # extension origin may reach /api/analyze. The proxy exists so the
+      # OpenAI key never ships in the extension, so that gate is the product.
+      - name: Test
+        working-directory: backend
+        run: npm test
+
+      - name: Audit production dependencies
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+
+  extension:
+    name: Extension manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      # A malformed manifest or a script the manifest names but that does not
+      # exist makes the extension fail to load — a class of break that is
+      # invisible until someone reinstalls it.
+      - name: Validate manifest.json
+        run: node scripts/validate-manifest.mjs
+
+      - name: Parse every extension script
+        run: |
+          fail=0
+          for f in $(git ls-files '*.js' ':!:backend/**'); do
+            node --check "$f" || { echo "syntax error: $f"; fail=1; }
+          done
+          exit $fail
