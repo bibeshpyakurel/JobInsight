@@ -2,9 +2,14 @@
 
 ## Ground rules
 
-`main` is protected. Every change arrives through a pull request, and CI must
-pass before it can merge. This applies to the maintainer as well — the branch
-rules are not advisory.
+`main` is protected. Every change arrives through a pull request, CI must pass
+before it can merge, force pushes and branch deletion are refused, and history
+stays linear.
+
+Repository admins can still push directly in a genuine emergency. GitHub records
+every such bypass on the push, so it is a break-glass path with an audit trail,
+not a routine shortcut. If you use it, follow up with a pull request that adds
+whatever test would have caught the problem.
 
 ## Workflow
 
