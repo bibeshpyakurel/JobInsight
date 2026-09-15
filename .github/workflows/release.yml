@@ -1,0 +1,44 @@
+name: Release
+
+# Publishing a release is a deliberate act: push a tag, and this turns the
+# conventional commits since the previous tag into grouped release notes.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build notes for"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Build release notes
+        id: notes
+        run: bash scripts/build-release-notes.sh "${{ inputs.tag || github.ref_name }}" > NOTES.md
+
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file NOTES.md
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file NOTES.md
+          fi

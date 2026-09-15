@@ -1,0 +1,32 @@
+name: Commits
+
+# The changelog and release notes are generated from commit subjects, so the
+# format is enforced rather than encouraged. A commit that does not parse is a
+# change that vanishes from the release notes.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commits-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conventional:
+    name: Conventional commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so the base..head range can be walked.
+          fetch-depth: 0
+
+      - name: Validate commit subjects
+        run: |
+          bash scripts/check-conventional-commits.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
