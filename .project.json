@@ -1,0 +1,9 @@
+{
+  "headlineMetric": "7-day client-side result cache on GPT-4o-mini job analyses, eliminating redundant API calls",
+  "role": "Sole developer",
+  "resumeEligible": true,
+  "stack": ["Chrome MV3", "JavaScript", "Node.js", "Express", "OpenAI GPT-4o-mini", "Google OAuth", "Render"],
+  "oneLiner": "A Chrome MV3 extension that analyzes LinkedIn job postings in real time with GPT-4o-mini behind a Google OAuth proxy.",
+  "startDate": "2026-01",
+  "endDate": "2026-02"
+}
