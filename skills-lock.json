@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "cleanup-codebase": {
+      "source": "bibeshpyakurel/codecleanup-skills",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/cleanup-codebase/SKILL.md",
+      "computedHash": "544f233c195caf7a49d7cd8cd4ef08b509b57d9b34f5d7707bcbab4ba3e47099"
+    }
+  }
+}

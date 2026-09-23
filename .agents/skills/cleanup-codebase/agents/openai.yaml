@@ -1,0 +1,7 @@
+interface:
+  display_name: "Cleanup Codebase"
+  short_description: "Remove dead code and repo cruft without changing behavior."
+  default_prompt: "Clean up this codebase. Preserve behavior and report what you left untouched."
+
+policy:
+  allow_implicit_invocation: true
